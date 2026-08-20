@@ -1,4 +1,14 @@
-"""Visualizaciones estadísticas y escena táctica tridimensional."""
+"""Visualizaciones estadísticas y escena táctica tridimensional.
+
+Las funciones de este módulo son puras respecto al estado de Streamlit: reciben
+DataFrames o un ``SimulationResult`` y devuelven figuras de Plotly. Esto permite
+probar el motor por separado y reutilizar las figuras en otra interfaz.
+
+La escena 3D no carga modelos externos. Construye cajas y octaedros, los combina
+en pocas trazas ``Mesh3d`` y reduce así el costo de renderizar muchos infectados.
+Los edificios y vehículos son contexto visual; no forman parte de la física del
+modelo, que conserva movimiento radial sin colisiones.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +22,8 @@ import plotly.graph_objects as go
 from simulation import SimulationResult
 
 
+# Paleta compartida. Centralizar los colores garantiza correspondencia entre
+# tarjetas de Streamlit, modelos estadísticos y elementos de la arena.
 BG = "#070908"
 PANEL = "#0d1210"
 GRID = "#28342d"
@@ -28,7 +40,14 @@ POLAR_COLOR = "#68b8d8"
 
 @dataclass
 class MeshBuilder:
-    """Acumula primitivas en una sola malla para mantener fluida la escena."""
+    """Acumula vértices y triángulos antes de crear una traza Plotly.
+
+    Plotly representa una malla con tres arreglos de coordenadas y tres arreglos
+    de índices ``i``, ``j`` y ``k``. Cada llamada a ``box`` u ``octahedron``
+    agrega geometría con un desplazamiento de índices correcto. Consolidar muchas
+    primitivas en una sola traza es considerablemente más eficiente que crear una
+    traza por extremidad o edificio.
+    """
 
     x: list[float] = field(default_factory=list)
     y: list[float] = field(default_factory=list)
@@ -49,7 +68,14 @@ class MeshBuilder:
         color: str,
         angle: float = 0.0,
     ) -> None:
-        """Agrega una caja orientada alrededor del eje vertical."""
+        """Agrega un prisma rectangular rotado alrededor del eje vertical.
+
+        Args:
+            cx, cy, cz: centro de la caja en coordenadas de mundo.
+            width, depth, height: dimensiones antes de rotar.
+            color: color CSS aplicado a sus doce caras triangulares.
+            angle: rotación en radianes alrededor del eje Z.
+        """
 
         local = np.array([
             [-width / 2, -depth / 2, -height / 2],
@@ -69,6 +95,8 @@ class MeshBuilder:
         self.x.extend(local[:, 0].tolist())
         self.y.extend(local[:, 1].tolist())
         self.z.extend(local[:, 2].tolist())
+        # Cada cara rectangular se divide en dos triángulos. El orden conserva
+        # una orientación consistente para que la iluminación no se invierta.
         faces = [
             (0, 1, 2), (0, 2, 3), (4, 6, 5), (4, 7, 6),
             (0, 4, 5), (0, 5, 1), (1, 5, 6), (1, 6, 2),
@@ -81,7 +109,11 @@ class MeshBuilder:
             self.facecolor.append(color)
 
     def octahedron(self, cx: float, cy: float, cz: float, radius: float, color: str) -> None:
-        """Agrega una cabeza facetada de bajo poligonaje."""
+        """Agrega un octaedro usado como cabeza de bajo poligonaje.
+
+        Se elige un octaedro porque necesita solo seis vértices y ocho caras,
+        pero sigue siendo legible desde cualquier ángulo de cámara.
+        """
 
         vertices = [
             (cx + radius, cy, cz), (cx - radius, cy, cz),
@@ -103,6 +135,13 @@ class MeshBuilder:
             self.facecolor.append(color)
 
     def trace(self, name: str, opacity: float = 1.0) -> go.Mesh3d:
+        """Materializa todo lo acumulado como una única traza ``Mesh3d``.
+
+        Args:
+            name: etiqueta mostrada en la leyenda de Plotly.
+            opacity: transparencia global de la malla.
+        """
+
         return go.Mesh3d(
             x=self.x, y=self.y, z=self.z,
             i=self.i, j=self.j, k=self.k,
@@ -118,6 +157,8 @@ class MeshBuilder:
 
 
 def _offset(cx: float, cy: float, angle: float, forward: float, lateral: float) -> tuple[float, float]:
+    """Convierte un desplazamiento local del personaje a coordenadas de mundo."""
+
     return (
         cx + forward * math.cos(angle) - lateral * math.sin(angle),
         cy + forward * math.sin(angle) + lateral * math.cos(angle),
@@ -134,7 +175,12 @@ def _add_humanoid(
     skin_color: str,
     pose: float = 0.0,
 ) -> None:
-    """Construye un personaje 3D estilizado con nueve primitivas."""
+    """Construye un humanoide estilizado con primitivas de bajo costo.
+
+    ``angle`` orienta el torso, ``scale`` controla el tamaño completo y ``pose``
+    inclina los brazos en direcciones opuestas. El protagonista y los infectados
+    comparten geometría; colores, escala y postura comunican su rol.
+    """
 
     for lateral in (-0.18, 0.18):
         px, py = _offset(x, y, angle, 0.0, lateral * scale)
@@ -157,7 +203,18 @@ def _add_humanoid(
 
 
 def _scene_mesh(arena_radius: float) -> MeshBuilder:
-    """Crea ruinas, vehículos, barricadas y puesto central."""
+    """Crea la geometría ambiental estática de la zona de contención.
+
+    Args:
+        arena_radius: escala de referencia para distribuir barricadas.
+
+    Returns:
+        Constructor con edificios, vehículos, barreras y plataforma central.
+
+    Notes:
+        Esta geometría no altera trayectorias; hace explícito el límite entre
+        representación visual y reglas matemáticas del simulador.
+    """
 
     mesh = MeshBuilder()
     buildings = [
@@ -182,10 +239,23 @@ def _scene_mesh(arena_radius: float) -> MeshBuilder:
 
 
 def arena_3d(result: SimulationResult, t_view: float) -> go.Figure:
-    """Representa el estado de una partida con modelos 3D procedurales."""
+    """Reconstruye la arena en un instante de la partida.
+
+    Args:
+        result: resultado completo que contiene configuración y entidades.
+        t_view: segundo de la misión que se desea observar.
+
+    Returns:
+        Figura Plotly rotatoria con terreno, escenario, anillos y personajes.
+
+    La posición se recalcula desde ``spawn_time``, velocidad y ángulo; no se
+    almacenan coordenadas por frame. ``death_time`` impide mostrar una entidad
+    después de su eliminación.
+    """
 
     cfg = result.config
     fig = go.Figure()
+    # Una superficie de 28 x 28 mantiene textura visible con pocos polígonos.
     grid = np.linspace(-cfg.arena_radius * 1.15, cfg.arena_radius * 1.15, 28)
     xx, yy = np.meshgrid(grid, grid)
     texture = 0.03 * np.sin(xx * 0.75) * np.cos(yy * 0.65)
@@ -199,6 +269,7 @@ def arena_3d(result: SimulationResult, t_view: float) -> go.Figure:
     ))
     fig.add_trace(_scene_mesh(cfg.arena_radius).trace("Escenario"))
 
+    # Los tres anillos codifican perímetro, alcance del arma y contacto.
     theta = np.linspace(0, 2 * np.pi, 260)
     for radius, color, width, dash in [
         (cfg.arena_radius, "#59665e", 4, "solid"),
@@ -219,6 +290,8 @@ def arena_3d(result: SimulationResult, t_view: float) -> go.Figure:
     _add_humanoid(player_mesh, 0, 0, math.pi / 2, 1.05, "#a6e36d", "#d1b38b")
     fig.add_trace(player_mesh.trace("Sobreviviente"))
 
+    # Seleccionar entidades vivas en t_view permite explorar pasado y presente
+    # con la misma tabla final de enemigos.
     alive = result.enemies[
         (result.enemies["spawn_time"] <= t_view)
         & (result.enemies["death_time"].isna() | (result.enemies["death_time"] > t_view))
@@ -252,6 +325,8 @@ def arena_3d(result: SimulationResult, t_view: float) -> go.Figure:
         )
     if zombie_mesh.x:
         fig.add_trace(zombie_mesh.trace("Infectados"))
+        # Los marcadores transparentes aportan un blanco de hover amplio sin
+        # ocultar la geometría detallada de la malla.
         fig.add_trace(go.Scatter3d(
             x=xs, y=ys, z=np.full(len(xs), 1.45),
             mode="markers",
@@ -283,6 +358,8 @@ def arena_3d(result: SimulationResult, t_view: float) -> go.Figure:
 
 
 def timeline_figure(result: SimulationResult) -> go.Figure:
+    """Grafica HP y concurrencia con dos escalas verticales sincronizadas."""
+
     df = result.timeline
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -308,6 +385,12 @@ def timeline_figure(result: SimulationResult) -> go.Figure:
 
 
 def arrival_process_figure(result: SimulationResult) -> go.Figure:
+    """Construye la trayectoria escalonada del proceso de conteo observado.
+
+    Cada instante se duplica en X para dibujar un salto vertical exacto de
+    ``N(t)-1`` a ``N(t)``. La curva termina en el cierre real de la partida.
+    """
+
     arrivals = result.arrivals
     end_time = result.survival_time
     if arrivals.empty:
@@ -334,6 +417,12 @@ def arrival_process_figure(result: SimulationResult) -> go.Figure:
 
 
 def interarrival_figure(result: SimulationResult) -> go.Figure:
+    """Superpone interarribos observados y densidad teórica del modelo.
+
+    La figura es diagnóstica: una sola partida produce una muestra censurada por
+    el horizonte y no constituye por sí misma una prueba de bondad de ajuste.
+    """
+
     deltas = result.arrivals["delta"].to_numpy() if not result.arrivals.empty else np.array([])
     fig = go.Figure()
     if len(deltas):
@@ -371,6 +460,8 @@ def interarrival_figure(result: SimulationResult) -> go.Figure:
 
 
 def monte_carlo_figure(batch: pd.DataFrame) -> go.Figure:
+    """Resume un lote en un gráfico circular de supervivencia y fracaso."""
+
     survived = int(batch["survived"].sum())
     failed = int(len(batch) - survived)
     fig = go.Figure(go.Pie(
@@ -391,6 +482,8 @@ def monte_carlo_figure(batch: pd.DataFrame) -> go.Figure:
 
 
 def survival_curve_figure(curve: pd.DataFrame) -> go.Figure:
+    """Grafica la curva de dificultad con errores asimétricos de Wilson."""
+
     color = POISSON_COLOR if curve.iloc[0]["model"] == "poisson" else POLAR_COLOR
     probabilities = curve["survival_probability"] * 100
     fig = go.Figure(go.Scatter(
@@ -419,6 +512,8 @@ def survival_curve_figure(curve: pd.DataFrame) -> go.Figure:
 
 
 def model_comparison_figure(summary: pd.DataFrame) -> go.Figure:
+    """Compara ambos modelos con barras e intervalos de confianza al 95 %."""
+
     labels = summary["model"].map({"poisson": "Poisson", "polar": "Polar-lognormal"})
     probabilities = summary["survival_probability"] * 100
     fig = go.Figure(go.Bar(

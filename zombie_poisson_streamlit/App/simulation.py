@@ -1,10 +1,23 @@
-"""Motor estocástico del simulador de supervivencia.
+"""Motor estocástico y capa de experimentación del proyecto.
 
 Se comparan dos modelos con el mismo interarribo medio: un proceso de Poisson
 homogéneo con interarribos exponenciales y un proceso de renovación con
 interarribos lognormales generados mediante el método polar de Marsaglia.
 El método polar no es un proceso de conteo; esta formulación evita presentar
 como equivalentes dos conceptos matemáticos de distinta naturaleza.
+
+El módulo no depende de Streamlit ni de Plotly. Esa separación permite ejecutar
+pruebas y experimentos Monte Carlo sin levantar la interfaz web. El flujo es:
+
+``SimulationConfig -> calendario de llegadas -> combate -> SimulationResult``.
+
+Unidades internas
+-----------------
+* tiempo: segundos;
+* distancia: metros;
+* vida: puntos de HP;
+* daño: HP por segundo;
+* ``lambda_rate``: llegadas por segundo.
 """
 
 from __future__ import annotations
@@ -17,30 +30,43 @@ import numpy as np
 import pandas as pd
 
 
+# A Literal catches invalid model names in static analysis while ``validate``
+# protects callers at runtime (for example, dictionaries restored from cache).
 ArrivalModel = Literal["poisson", "polar"]
 
 
 @dataclass(frozen=True)
 class SimulationConfig:
-    """Parámetros de una partida expresados en segundos, metros y puntos de vida."""
+    """Configuración completa e inmutable de una partida.
 
-    duration: float = 90.0
-    lambda_rate: float = 0.65
-    arrival_model: ArrivalModel = "poisson"
-    polar_cv: float = 0.45
-    player_hp: float = 110.0
-    player_dps: float = 42.0
-    weapon_range: float = 10.0
-    enemy_hp: float = 42.0
-    enemy_speed: float = 1.55
-    enemy_dps: float = 9.0
-    arena_radius: float = 18.0
-    contact_radius: float = 1.35
-    dt: float = 0.05
-    seed: int = 22193
+    La inmutabilidad evita que una ejecución Monte Carlo cambie accidentalmente
+    los parámetros compartidos. ``dataclasses.replace`` crea las variantes de
+    semilla, tasa o modelo necesarias para cada corrida.
+    """
+
+    duration: float = 90.0  # Horizonte de simulación, en segundos.
+    lambda_rate: float = 0.65  # Intensidad media de llegadas por segundo.
+    arrival_model: ArrivalModel = "poisson"  # Familia temporal seleccionada.
+    polar_cv: float = 0.45  # Coeficiente de variación del modelo lognormal.
+    player_hp: float = 110.0  # Vida inicial del protagonista.
+    player_dps: float = 42.0  # Daño continuo infligido por segundo.
+    weapon_range: float = 10.0  # Radio dentro del que puede atacar.
+    enemy_hp: float = 42.0  # Vida base antes de la perturbación individual.
+    enemy_speed: float = 1.55  # Velocidad radial base en metros/segundo.
+    enemy_dps: float = 9.0  # Daño base de un atacante en contacto.
+    arena_radius: float = 18.0  # Radio nominal de aparición.
+    contact_radius: float = 1.35  # Distancia a la que comienza el daño.
+    dt: float = 0.05  # Paso de integración del combate.
+    seed: int = 22193  # Semilla maestra reproducible.
 
     def validate(self) -> None:
-        """Valida dominio, geometría y estabilidad numérica."""
+        """Valida dominio, geometría y estabilidad numérica.
+
+        Raises:
+            ValueError: si una magnitud es no positiva, el modelo no existe,
+                los radios se solapan de forma imposible o ``dt`` es demasiado
+                grande para la resolución admitida.
+        """
 
         positive = {
             "duration": self.duration,
@@ -72,7 +98,13 @@ class SimulationConfig:
 
 @dataclass
 class SimulationResult:
-    """Resultados, eventos y trazas de una partida."""
+    """Resultados escalares y tablas producidas por una partida.
+
+    ``arrivals`` contiene solo eventos que ocurrieron antes del final real de
+    la partida. ``arrival_schedule`` conserva el calendario hasta el horizonte
+    solicitado, incluso si el jugador murió antes. Esta separación impide que la
+    interfaz contabilice como ocurridos eventos posteriores a la derrota.
+    """
 
     config: SimulationConfig
     survived: bool
@@ -92,13 +124,28 @@ class SimulationResult:
     timeline: pd.DataFrame
 
 
+# Ambos generadores entregan el mismo esquema. Las columnas que no aplican a un
+# modelo se rellenan con NaN; así, la interfaz puede alternar modelos sin adaptar
+# su contrato de datos.
 ARRIVAL_COLUMNS = [
     "enemy_id", "model", "u", "polar_v1", "polar_v2", "z", "delta", "arrival_time"
 ]
 
 
 def _marsaglia_normals(rng: np.random.Generator) -> Iterator[tuple[float, float, float, float]]:
-    """Produce normales estándar y conserva los uniformes que las originan."""
+    """Produce una secuencia infinita de normales estándar por Marsaglia Polar.
+
+    Args:
+        rng: generador NumPy que aporta los uniformes independientes.
+
+    Yields:
+        Tuplas ``(z, v1, v2, s)``. Se preservan los uniformes aceptados y
+        ``s = v1² + v2²`` para poder explicar y auditar la transformación.
+
+    Notes:
+        Cada punto se propone en el cuadrado (-1, 1)². Los puntos fuera del
+        círculo unitario se rechazan; cada par aceptado produce dos normales.
+    """
 
     while True:
         v1, v2 = rng.uniform(-1.0, 1.0, size=2)
@@ -111,7 +158,12 @@ def _marsaglia_normals(rng: np.random.Generator) -> Iterator[tuple[float, float,
 
 
 def _lognormal_parameters(lambda_rate: float, coefficient_variation: float) -> tuple[float, float]:
-    """Calcula parámetros logarítmicos con media 1/lambda y CV indicado."""
+    """Calcula ``mu`` y ``sigma`` de una lognormal comparable con Poisson.
+
+    La parametrización fuerza ``E[Delta] = 1 / lambda_rate`` y conserva el
+    coeficiente de variación solicitado. Devuelve parámetros de la normal
+    subyacente, no la media y desviación de ``Delta``.
+    """
 
     sigma_squared = log(1.0 + coefficient_variation**2)
     return log(1.0 / lambda_rate) - sigma_squared / 2.0, sqrt(sigma_squared)
@@ -122,7 +174,19 @@ def generate_poisson_arrivals(
     duration: float,
     rng: np.random.Generator,
 ) -> pd.DataFrame:
-    """Genera llegadas Poisson mediante ``Delta = -ln(U) / lambda``."""
+    """Genera un calendario Poisson por transformada inversa.
+
+    Args:
+        lambda_rate: tasa constante de eventos por segundo.
+        duration: horizonte hasta el que se conservan llegadas.
+        rng: fuente de uniformes reproducible.
+
+    Returns:
+        DataFrame ordenado con una fila por llegada dentro del horizonte.
+
+    Raises:
+        ValueError: si la tasa o la duración no son positivas.
+    """
 
     if lambda_rate <= 0 or duration <= 0:
         raise ValueError("lambda_rate y duration deben ser positivos")
@@ -130,6 +194,7 @@ def generate_poisson_arrivals(
     arrival_time = 0.0
     enemy_id = 0
     while True:
+        # Excluir cero evita ``log(0)``; NumPy ya excluye el extremo superior.
         u = float(rng.uniform(np.finfo(float).eps, 1.0))
         delta = float(-np.log(u) / lambda_rate)
         arrival_time += delta
@@ -159,6 +224,15 @@ def generate_polar_arrivals(
 
     La lognormal garantiza interarribos positivos. Sus parámetros se ajustan
     para que ``E[Delta] = 1/lambda`` y la comparación tenga una tasa media justa.
+
+    Args:
+        lambda_rate: frecuencia media objetivo en llegadas por segundo.
+        duration: horizonte de observación.
+        rng: fuente de uniformes usada por Marsaglia.
+        coefficient_variation: desviación relativa de los interarribos.
+
+    Returns:
+        DataFrame con normales, uniformes aceptados e instantes acumulados.
     """
 
     if lambda_rate <= 0 or duration <= 0:
@@ -191,7 +265,15 @@ def generate_polar_arrivals(
 
 
 def generate_arrivals(config: SimulationConfig, rng: np.random.Generator) -> pd.DataFrame:
-    """Selecciona el generador de llegadas configurado."""
+    """Selecciona el generador sin duplicar lógica en ``simulate``.
+
+    Args:
+        config: configuración que contiene modelo, tasa, duración y CV.
+        rng: flujo aleatorio reservado exclusivamente para llegadas.
+
+    Returns:
+        Calendario normalizado con las columnas de ``ARRIVAL_COLUMNS``.
+    """
 
     if config.arrival_model == "poisson":
         return generate_poisson_arrivals(config.lambda_rate, config.duration, rng)
@@ -201,19 +283,45 @@ def generate_arrivals(config: SimulationConfig, rng: np.random.Generator) -> pd.
 
 
 def _distance(enemy: dict[str, object], time: float, contact_radius: float) -> float:
+    """Calcula la distancia radial y la limita al radio de contacto.
+
+    El límite inferior representa que un infectado no atraviesa al protagonista:
+    una vez en contacto permanece allí hasta morir o finalizar la misión.
+    """
+
     elapsed = max(0.0, time - float(enemy["spawn_time"]))
     return max(contact_radius, float(enemy["spawn_radius"]) - float(enemy["speed"]) * elapsed)
 
 
 def simulate(config: SimulationConfig, keep_timeline: bool = True) -> SimulationResult:
-    """Ejecuta una partida con listas activas para evitar recorridos innecesarios."""
+    """Ejecuta una partida mediante integración temporal de paso fijo.
+
+    Args:
+        config: parámetros validados del escenario.
+        keep_timeline: si es ``False``, omite muestras temporales para acelerar
+            lotes Monte Carlo; los indicadores finales siempre se calculan.
+
+    Returns:
+        ``SimulationResult`` con indicadores, entidades y trazas de la corrida.
+
+    Algorithm:
+        1. Crear un calendario completo de llegadas.
+        2. Asignar atributos independientes a cada enemigo.
+        3. Activar solo entidades cuyo instante ya ocurrió.
+        4. Seleccionar el objetivo, resolver ataque y sumar daño entrante.
+        5. Muestrear telemetría y detener al morir o alcanzar el horizonte.
+    """
 
     config.validate()
+    # Separar los flujos evita que cambiar el algoritmo de llegadas modifique
+    # también, por consumo accidental de uniformes, los atributos del enemigo i.
     arrival_seed, trait_seed = np.random.SeedSequence(config.seed).spawn(2)
     arrival_rng = np.random.default_rng(arrival_seed)
     trait_rng = np.random.default_rng(trait_seed)
     schedule = generate_arrivals(config, arrival_rng)
 
+    # Preconstruir las entidades hace reproducible su identidad y permite que la
+    # visualización consulte posiciones pasadas a partir de spawn/death_time.
     enemies: list[dict[str, object]] = []
     for row in schedule.itertuples(index=False):
         max_hp = float(config.enemy_hp * trait_rng.uniform(0.90, 1.12))
@@ -240,11 +348,15 @@ def simulate(config: SimulationConfig, keep_timeline: bool = True) -> Simulation
     timeline_rows: list[dict[str, float | int]] = []
     survived = False
 
+    # ``active`` contiene índices, no copias de diccionarios. Esto reduce el
+    # costo del bucle respecto a revisar todo el calendario en cada paso dt.
     while True:
+        # Fase 1: materializar todas las llegadas ocurridas desde el paso previo.
         while spawn_cursor < len(enemies) and float(enemies[spawn_cursor]["spawn_time"]) <= time + 1e-12:
             active.append(spawn_cursor)
             spawn_cursor += 1
 
+        # Fase 2: clasificar vivos, atacantes y candidato más cercano.
         target_idx: Optional[int] = None
         target_distance = float("inf")
         attackers: list[int] = []
@@ -263,6 +375,7 @@ def simulate(config: SimulationConfig, keep_timeline: bool = True) -> Simulation
         active = living
         max_concurrent = max(max_concurrent, len(active))
 
+        # Fase 3: el protagonista concentra todo su DPS en un único objetivo.
         if target_idx is not None:
             enemy = enemies[target_idx]
             enemy["hp"] = max(0.0, float(enemy["hp"]) - config.player_dps * config.dt)
@@ -271,6 +384,8 @@ def simulate(config: SimulationConfig, keep_timeline: bool = True) -> Simulation
                 enemy["death_time"] = min(time + config.dt, config.duration)
                 eliminated += 1
 
+        # Fase 4: enemigos de contacto que sobrevivieron al disparo dañan en
+        # paralelo; por eso se suman sus DPS antes de integrar durante dt.
         incoming_dps = sum(
             float(enemies[idx]["dps"]) for idx in attackers if not bool(enemies[idx]["killed"])
         )
@@ -278,6 +393,8 @@ def simulate(config: SimulationConfig, keep_timeline: bool = True) -> Simulation
         mission_finished = time >= config.duration - 1e-12
         player_fell = player_hp <= 0
 
+        # La telemetría se reduce a 2 Hz para mantener pequeños los DataFrames y
+        # las gráficas. El estado terminal siempre se registra.
         if keep_timeline and (time >= next_sample - 1e-12 or mission_finished or player_fell):
             timeline_rows.append({
                 "time": round(time, 4),
@@ -296,6 +413,8 @@ def simulate(config: SimulationConfig, keep_timeline: bool = True) -> Simulation
             break
         time = min(round(time + config.dt, 10), config.duration)
 
+    # Separar calendario y eventos realmente ocurridos corrige el caso en que el
+    # jugador muere antes de T y el proceso tenía apariciones futuras planeadas.
     survival_time = config.duration if survived else time
     actual_arrivals = schedule[schedule["arrival_time"] <= survival_time + 1e-9].copy()
     generated = len(actual_arrivals)
@@ -339,7 +458,17 @@ def simulate(config: SimulationConfig, keep_timeline: bool = True) -> Simulation
 
 
 def wilson_interval(successes: int, trials: int, z: float = 1.959963984540054) -> tuple[float, float]:
-    """Intervalo de Wilson bilateral para una proporción binomial."""
+    """Calcula un intervalo bilateral de Wilson para una proporción binomial.
+
+    Args:
+        successes: número de partidas sobrevividas.
+        trials: número total de partidas.
+        z: cuantil normal; el valor predeterminado corresponde al 95 %.
+
+    Returns:
+        Límites inferior y superior recortados al intervalo [0, 1]. Si no hay
+        ensayos, ambos límites son ``NaN``.
+    """
 
     if trials <= 0:
         return float("nan"), float("nan")
@@ -357,7 +486,12 @@ def estimate_survival_probability(
     runs: int = 200,
     seed: Optional[int] = None,
 ) -> pd.DataFrame:
-    """Ejecuta partidas independientes para estimar la supervivencia."""
+    """Ejecuta partidas independientes y devuelve sus resultados individuales.
+
+    ``keep_timeline=False`` evita construir datos que el resumen Monte Carlo no
+    consume. La semilla maestra solo genera semillas de corrida; cada partida
+    conserva internamente flujos separados para llegadas y atributos.
+    """
 
     if runs <= 0:
         raise ValueError("runs debe ser positivo")
@@ -381,7 +515,11 @@ def estimate_survival_probability(
 
 
 def summarize_batch(batch: pd.DataFrame, model: str) -> dict[str, float | int | str]:
-    """Resume una muestra Monte Carlo e incluye IC de Wilson al 95 %."""
+    """Reduce un lote Monte Carlo a indicadores e IC de Wilson al 95 %.
+
+    El resumen conserva el nombre del modelo para que las funciones visuales
+    puedan aplicar etiquetas y colores sin inferirlos de columnas externas.
+    """
 
     successes = int(batch["survived"].sum())
     trials = len(batch)
@@ -403,7 +541,17 @@ def compare_arrival_models(
     base_config: SimulationConfig,
     runs: int = 200,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Compara Poisson y Polar usando las mismas semillas de corrida."""
+    """Compara Poisson y Polar mediante un diseño de semillas pareadas.
+
+    Returns:
+        Una tupla con el detalle de las ``2 * runs`` partidas y una tabla de dos
+        filas con los indicadores agregados de cada modelo.
+
+    Notes:
+        Emparejar semillas reduce ruido ajeno al modelo. No convierte las
+        observaciones en idénticas: cada algoritmo consume sus uniformes de
+        manera distinta, que es precisamente la diferencia estudiada.
+    """
 
     if runs <= 0:
         raise ValueError("runs debe ser positivo")
@@ -438,7 +586,11 @@ def survival_curve(
     lambdas: list[float],
     runs_per_lambda: int = 80,
 ) -> pd.DataFrame:
-    """Estima la curva de supervivencia con incertidumbre para un modelo."""
+    """Estima supervivencia e incertidumbre sobre una cuadrícula de tasas.
+
+    Cada tasa recibe un desplazamiento determinista de semilla para que los
+    puntos sean reproducibles y no reutilicen exactamente el mismo lote.
+    """
 
     rows: list[dict[str, float | str]] = []
     for index, lambda_rate in enumerate(lambdas):
@@ -460,6 +612,10 @@ def survival_curve(
 
 
 def config_as_dict(config: SimulationConfig) -> dict[str, object]:
-    """Representación serializable usada por la caché de Streamlit."""
+    """Convierte la configuración inmutable en un diccionario serializable.
+
+    Streamlit puede calcular una clave de caché estable para tipos simples; la
+    conversión también facilita guardar el escenario en ``session_state``.
+    """
 
     return asdict(config)

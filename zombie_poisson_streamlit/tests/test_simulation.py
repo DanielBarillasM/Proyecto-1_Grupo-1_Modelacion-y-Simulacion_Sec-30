@@ -1,11 +1,29 @@
-"""Pruebas de regresión y propiedades estadísticas del motor."""
+"""Pruebas de regresión y propiedades estadísticas del motor.
+
+El conjunto comprueba tanto invariantes deterministas (reproducibilidad,
+validación y emparejamiento de semillas) como propiedades que solo pueden
+evaluarse sobre una muestra grande (media y varianza de los procesos).
+
+Ejecución desde ``zombie_poisson_streamlit``::
+
+    python -m unittest discover -s tests -v
+"""
 
 from __future__ import annotations
 
+import sys
 import unittest
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
+
+# The production modules live in ``App`` after the project reorganization.
+# Insert that directory explicitly so the suite behaves the same when launched
+# from the project folder, an IDE, or an automated CI runner.
+APP_DIR = Path(__file__).resolve().parents[1] / "App"
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
 
 from simulation import (
     SimulationConfig,
@@ -18,12 +36,17 @@ from simulation import (
 
 
 class ArrivalGenerationTests(unittest.TestCase):
+    """Valida los generadores antes de involucrar el motor de combate."""
+
     def test_poisson_is_reproducible(self) -> None:
         first = generate_poisson_arrivals(0.7, 90.0, np.random.default_rng(17))
         second = generate_poisson_arrivals(0.7, 90.0, np.random.default_rng(17))
         self.assertTrue(first.equals(second))
 
     def test_poisson_count_mean_and_variance_match_lambda_t(self) -> None:
+        # El tamaño de muestra equilibra estabilidad estadística y velocidad.
+        # Las tolerancias son más estrechas que la desviación típica esperada
+        # del estimador, pero evitan una prueba frágil ante fluctuaciones válidas.
         lambda_rate, duration, repetitions = 0.4, 60.0, 1200
         master = np.random.default_rng(8102)
         counts = np.array([
@@ -35,6 +58,8 @@ class ArrivalGenerationTests(unittest.TestCase):
         self.assertLess(abs(float(counts.var(ddof=1)) - expected), 2.2)
 
     def test_polar_lognormal_has_target_mean(self) -> None:
+        # Un horizonte amplio ofrece suficientes interarribos para contrastar
+        # la parametrización teórica E[Delta] = 1 / lambda.
         lambda_rate = 0.8
         arrivals = generate_polar_arrivals(
             lambda_rate,
@@ -47,6 +72,8 @@ class ArrivalGenerationTests(unittest.TestCase):
 
 
 class SimulationTests(unittest.TestCase):
+    """Comprueba reglas de negocio e invariantes de una partida completa."""
+
     def test_full_simulation_is_reproducible(self) -> None:
         config = SimulationConfig(seed=3344)
         first, second = simulate(config), simulate(config)
@@ -83,6 +110,8 @@ class SimulationTests(unittest.TestCase):
         self.assertEqual(set(summary["model"]), {"poisson", "polar"})
 
     def test_smaller_dt_gives_a_close_result_in_simple_scenario(self) -> None:
+        # Reducir dt no tiene por qué producir igualdad bit a bit, pero sí una
+        # conclusión y un HP final cercanos en un escenario de baja presión.
         config = SimulationConfig(lambda_rate=0.2, seed=19)
         coarse = simulate(replace(config, dt=0.05))
         fine = simulate(replace(config, dt=0.025))
@@ -91,6 +120,8 @@ class SimulationTests(unittest.TestCase):
 
 
 class ConfidenceIntervalTests(unittest.TestCase):
+    """Verifica límites básicos del intervalo binomial de Wilson."""
+
     def test_wilson_interval_contains_observed_proportion(self) -> None:
         low, high = wilson_interval(63, 100)
         self.assertLess(low, 0.63)

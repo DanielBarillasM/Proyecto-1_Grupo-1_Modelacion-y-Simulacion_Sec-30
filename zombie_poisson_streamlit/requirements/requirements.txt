@@ -1,0 +1,15 @@
+# Runtime dependencies for the Streamlit simulator (Python 3.10 or newer).
+# Install from ``zombie_poisson_streamlit`` with:
+# python -m pip install -r requirements/requirements.txt
+
+# Reactive web interface and application server.
+streamlit>=1.50,<2
+
+# Numerical random generation and vector calculations.
+numpy>=1.26
+
+# Tabular simulation results and statistical summaries.
+pandas>=2.1
+
+# Interactive charts and procedural three-dimensional scene.
+plotly>=5.24

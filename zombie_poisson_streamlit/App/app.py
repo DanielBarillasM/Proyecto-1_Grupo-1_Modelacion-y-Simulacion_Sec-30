@@ -1,12 +1,40 @@
-"""Aplicación Streamlit del proyecto Outbreak: Stochastic Survival Lab."""
+"""Interfaz web del proyecto Outbreak: Stochastic Survival Lab.
+
+Este archivo actúa como capa de presentación y orquestación. No implementa la
+matemática del proceso ni crea directamente geometría Plotly: delega esas tareas
+a ``simulation.py`` y ``visuals.py``. Sus responsabilidades son:
+
+* recoger y validar indirectamente la configuración del formulario;
+* conservar el último escenario ejecutado en ``st.session_state``;
+* cachear simulaciones costosas con entradas serializables;
+* organizar la narrativa académica en pestañas;
+* presentar tablas, indicadores y figuras interactivas.
+
+Ejecución recomendada desde ``zombie_poisson_streamlit``::
+
+    streamlit run App/app.py
+
+Las rutas de recursos se calculan a partir de ``__file__``. Por ello, abrir la
+aplicación desde otro directorio no rompe las imágenes del encabezado.
+"""
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import streamlit as st
+
+# Resolve both imports and resources from the file location. Streamlit normally
+# places the script directory on ``sys.path``, but explicit resolution also
+# supports IDEs, test harnesses and launch commands issued from any directory.
+APP_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = APP_DIR.parent
+ASSETS_DIR = PROJECT_DIR / "assets"
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
 
 from simulation import (
     SimulationConfig,
@@ -28,8 +56,8 @@ from visuals import (
 )
 
 
-ROOT = Path(__file__).resolve().parent
-HERO_IMAGE = ROOT / "assets" / "outbreak-command-center.png"
+# The hero follows the same cwd-independent resource convention.
+HERO_IMAGE = ASSETS_DIR / "outbreak-command-center.png"
 
 st.set_page_config(
     page_title="Outbreak | Stochastic Survival Lab",
@@ -38,6 +66,9 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Streamlit ofrece temas globales, pero la identidad visual del laboratorio
+# necesita componentes específicos (cabecera, tarjetas y estados terminales).
+# Los selectores se concentran aquí para que la lógica Python permanezca limpia.
 CUSTOM_CSS = """
 <style>
 :root {
@@ -91,16 +122,27 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 @st.cache_data(show_spinner=False)
 def run_main(config_dict: dict[str, object]):
+    """Ejecuta una partida y memoriza el resultado por configuración exacta.
+
+    Se recibe un diccionario porque es una entrada sencilla y estable para el
+    sistema de hashing de Streamlit. La función reconstruye la dataclass antes de
+    entrar al motor.
+    """
+
     return simulate(SimulationConfig(**config_dict), keep_timeline=True)
 
 
 @st.cache_data(show_spinner=False)
 def run_monte_carlo(config_dict: dict[str, object], runs: int) -> pd.DataFrame:
+    """Cachea un lote Monte Carlo del modelo actualmente seleccionado."""
+
     return estimate_survival_probability(SimulationConfig(**config_dict), runs=runs)
 
 
 @st.cache_data(show_spinner=False)
 def run_comparison(config_dict: dict[str, object], runs: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Cachea la comparación pareada Poisson frente a Polar-lognormal."""
+
     return compare_arrival_models(SimulationConfig(**config_dict), runs=runs)
 
 
@@ -108,18 +150,27 @@ def run_comparison(config_dict: dict[str, object], runs: int) -> tuple[pd.DataFr
 def run_curve(
     config_dict: dict[str, object], lambdas: tuple[float, ...], runs_per_lambda: int
 ) -> pd.DataFrame:
+    """Cachea una curva de supervivencia para una cuadrícula inmutable de tasas."""
+
     return survival_curve(
         SimulationConfig(**config_dict), list(lambdas), runs_per_lambda=runs_per_lambda
     )
 
 
 def section_header(kicker: str, title: str) -> None:
+    """Dibuja un encabezado de sección consistente en todas las pestañas."""
+
     st.markdown(
         f'<div class="section-title"><small>{kicker}</small><strong>{title}</strong></div>',
         unsafe_allow_html=True,
     )
 
 
+# ---------------------------------------------------------------------------
+# Panel de configuración
+# ---------------------------------------------------------------------------
+# El formulario agrupa widgets para evitar que cada movimiento de un deslizador
+# dispare una simulación. Solo el botón final confirma y publica la configuración.
 with st.sidebar:
     st.markdown('<div class="eyebrow">Centro de control</div>', unsafe_allow_html=True)
     st.markdown("## Configurar misión")
@@ -170,6 +221,8 @@ with st.sidebar:
         )
 
     if submitted:
+        # La interfaz trabaja en llegadas/minuto porque es más legible; el motor
+        # mantiene segundos como unidad base y recibe lambda dividido entre 60.
         selected_model = "poisson" if model_label == "Poisson" else "polar"
         new_config = SimulationConfig(
             duration=float(duration),
@@ -185,6 +238,8 @@ with st.sidebar:
             dt=float(dt),
             seed=int(seed),
         )
+        # Guardar una instantánea separa valores editados de valores simulados.
+        # También invalida experimentos que ya no describen el escenario activo.
         st.session_state["active_config"] = config_as_dict(new_config)
         st.session_state["simulation_count"] = st.session_state.get("simulation_count", 0) + 1
         st.session_state.pop("comparison_result", None)
@@ -196,6 +251,9 @@ with st.sidebar:
     )
 
 
+# ---------------------------------------------------------------------------
+# Cabecera editorial y estado inicial
+# ---------------------------------------------------------------------------
 hero_left, hero_right = st.columns([1.15, 1], gap="large", vertical_alignment="center")
 with hero_left:
     st.markdown(
@@ -222,6 +280,8 @@ with hero_right:
         st.image(HERO_IMAGE, width="stretch")
 
 
+# No ejecutar automáticamente al abrir la página: el usuario debe comprender
+# que los controles no tienen efecto hasta pulsar "SIMULAR MISIÓN".
 if "active_config" not in st.session_state:
     st.markdown(
         """
@@ -241,6 +301,8 @@ if "active_config" not in st.session_state:
     st.stop()
 
 
+# A partir de este punto siempre existe una configuración confirmada. La caché
+# evita repetir trabajo cuando una interacción solo cambia la vista temporal.
 config = SimulationConfig(**st.session_state["active_config"])
 result = run_main(config_as_dict(config))
 model_name = "Poisson" if config.arrival_model == "poisson" else "Polar-lognormal"
@@ -265,6 +327,8 @@ metrics[3].metric("Eliminados", result.eliminated, f"{100*result.eliminated/max(
 metrics[4].metric("Activos al cierre", result.remaining)
 metrics[5].metric("Pico simultáneo", result.max_concurrent)
 
+# Las pestañas siguen el orden recomendado de exposición: observar una corrida,
+# explicar su origen matemático, comparar modelos y finalmente inferir por lotes.
 simulation_tab, math_tab, comparison_tab, monte_carlo_tab, guide_tab = st.tabs([
     "Simulación 3D",
     "Desarrollo matemático",
@@ -275,6 +339,8 @@ simulation_tab, math_tab, comparison_tab, monte_carlo_tab, guide_tab = st.tabs([
 
 
 with simulation_tab:
+    # El deslizador no vuelve a simular; selecciona la muestra temporal más
+    # cercana y reconstruye posiciones desde los tiempos de nacimiento y muerte.
     section_header("Escena interactiva", "Explorar la partida en el tiempo")
     left, right = st.columns([2.05, 1], gap="large")
     with left:
@@ -323,6 +389,8 @@ with simulation_tab:
 
 
 with math_tab:
+    # Esta pestaña muestra el procedimiento aplicado a la semilla activa, no un
+    # ejemplo desconectado. Por eso las tablas provienen de ``result.arrivals``.
     section_header("Modelo estocástico", "De uniformes a instantes de aparición")
     st.markdown(
         """
@@ -396,6 +464,9 @@ with math_tab:
 
 
 with comparison_tab:
+    # Los resultados se guardan junto a una firma. Si cambia una entrada, la UI
+    # conserva el lote para inspección interna pero exige recalcularlo antes de
+    # presentarlo como vigente.
     section_header("Experimento pareado", "Poisson frente a Polar-lognormal")
     st.markdown(
         """
@@ -450,6 +521,8 @@ with comparison_tab:
 
 
 with monte_carlo_tab:
+    # Laboratorio del modelo activo: estima p para el escenario puntual y luego
+    # construye una curva alrededor de lambda con intervalos de Wilson.
     section_header("Inferencia por repetición", f"Probabilidad de supervivencia bajo {model_name}")
     run_col, curve_col = st.columns(2)
     runs = run_col.select_slider("Partidas del escenario", [50, 100, 200, 400], value=100)
@@ -499,6 +572,8 @@ with monte_carlo_tab:
 
 
 with guide_tab:
+    # Resumen autocontenido para que la demostración también pueda explicar
+    # objetivos, variables, supuestos, decisiones tecnológicas y entregables.
     section_header("Lectura académica", "Objetivo, variables, supuestos y alcance")
     objective_col, variables_col = st.columns(2)
     with objective_col:
@@ -542,9 +617,9 @@ with guide_tab:
     )
     st.markdown("### Archivos de entrega")
     st.markdown(
-        "- `README.md`: instalación, arquitectura, metodología y uso.\n"
-        "- `informe.tex`: informe académico compilable.\n"
-        "- `presentacion.html`: exposición navegable con teclado y controles.\n"
+        "- `../README.md`: instalación, arquitectura, metodología y uso.\n"
+        "- `report/informe.tex`: informe académico compilable.\n"
+        "- `presentation/presentacion.html`: exposición navegable con teclado y controles.\n"
         "- `tests/test_simulation.py`: verificaciones automáticas del motor."
     )
 
