@@ -68,7 +68,7 @@ Sea $N(t)$ el número de infectados que aparecen hasta el instante $t$. Para una
 tasa constante $\lambda$:
 
 $$
-N(t)\sim\operatorname{Poisson}(\lambda t),
+N(t)\sim\mathrm{Poisson}(\lambda t),
 \qquad
 P\{N(t)=k\}=e^{-\lambda t}\frac{(\lambda t)^k}{k!}.
 $$
@@ -76,7 +76,7 @@ $$
 Por tanto:
 
 $$
-\mathbb E[N(t)]=\operatorname{Var}[N(t)]=\lambda t.
+\mathbb E[N(t)]=\mathrm{Var}[N(t)]=\lambda t.
 $$
 
 Los tiempos entre llegadas son variables aleatorias continuas exponenciales.
