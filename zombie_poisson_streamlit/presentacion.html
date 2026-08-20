@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OUTBREAK: Poisson Survival · Presentación</title>
+<script>
+window.MathJax = {tex: {inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$','$$']]}};
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+:root{--bg:#060806;--panel:#0d1410;--panel2:#121b15;--line:#26342b;--text:#e6eee8;--muted:#93a79b;--lime:#b7ff5a;--red:#ff4d5f;--amber:#ffad4d}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif;overflow:hidden}
+body:before{content:"";position:fixed;inset:0;background:radial-gradient(circle at 15% 0%,rgba(116,177,91,.14),transparent 35%),radial-gradient(circle at 90% 15%,rgba(130,30,35,.12),transparent 28%);pointer-events:none}
+.deck{height:100vh;width:100vw;position:relative}.slide{display:none;height:100vh;padding:6vh 7vw 8vh;position:absolute;inset:0;overflow:auto}.slide.active{display:block;animation:in .32s ease}@keyframes in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.kicker{color:var(--lime);text-transform:uppercase;letter-spacing:.18em;font-weight:800;font-size:.8rem}.title{font-size:clamp(3rem,7vw,7.2rem);line-height:.88;letter-spacing:-.06em;margin:1rem 0}.subtitle{font-size:clamp(1.1rem,2vw,1.7rem);max-width:950px;color:var(--muted);line-height:1.5}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:2rem}.grid3{grid-template-columns:repeat(3,minmax(0,1fr))}.card{background:linear-gradient(180deg,rgba(16,24,18,.96),rgba(10,15,12,.96));border:1px solid var(--line);border-radius:20px;padding:22px;box-shadow:0 20px 70px rgba(0,0,0,.2)}.card h3{margin:.2rem 0 .65rem}.muted{color:var(--muted)}.formula{font-size:clamp(1.15rem,2.1vw,2rem);background:#0b110d;border:1px solid #2f4035;border-left:4px solid var(--lime);border-radius:14px;padding:15px 20px;margin:1rem 0}.flow{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin:2rem 0}.node{border:1px solid #35483b;background:#101812;padding:13px 17px;border-radius:13px;font-weight:700}.arrow{color:var(--lime);font-size:1.5rem}.danger{color:var(--red)}.accent{color:var(--lime)}.big{font-size:clamp(2rem,5vw,4.5rem);font-weight:850;letter-spacing:-.045em}.bars{display:flex;height:220px;align-items:end;gap:14px;border-bottom:1px solid var(--line);padding:0 8px}.bar{flex:1;background:linear-gradient(180deg,var(--red),#5a1c24);border-radius:8px 8px 0 0;min-width:28px;position:relative}.bar span{position:absolute;bottom:-2rem;width:100%;text-align:center;color:var(--muted);font-size:.8rem}.nav{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);display:flex;gap:10px;z-index:10}.nav button{background:#101812;color:var(--text);border:1px solid var(--line);border-radius:999px;padding:10px 15px;cursor:pointer}.nav button:hover{border-color:var(--lime)}.counter{position:fixed;right:26px;bottom:29px;color:var(--muted);font-size:.8rem}.hint{position:fixed;left:26px;bottom:29px;color:#65756b;font-size:.75rem}.mock{border:1px solid #2c3b32;border-radius:20px;background:#0a0f0c;padding:18px}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.metric{padding:15px;border:1px solid var(--line);border-radius:14px;background:#101712}.metric b{display:block;font-size:1.65rem}.metric small{color:var(--muted)} ul{line-height:1.75} h2{font-size:clamp(2.2rem,5vw,4.8rem);letter-spacing:-.045em;margin:.5rem 0 1.2rem}@media(max-width:800px){.grid,.grid3,.metrics{grid-template-columns:1fr}.slide{padding:5vh 5vw 12vh}}
+</style>
+</head>
+<body>
+<div class="deck">
+  <section class="slide active">
+    <div class="kicker">Modelación y Simulación · Variables Aleatorias Continuas</div>
+    <div class="title">OUTBREAK:<br><span class="accent">POISSON SURVIVAL</span></div>
+    <p class="subtitle">Modelación de oleadas de infectados en un videojuego de supervivencia mediante un Proceso de Poisson, implementado en Python + Streamlit con visualización táctica 3D y análisis Monte Carlo.</p>
+    <div class="grid grid3">
+      <div class="card"><h3>🎮 Problema</h3><p class="muted">¿Cómo hacer que las oleadas aparezcan de forma aleatoria y matemáticamente justificable?</p></div>
+      <div class="card"><h3>λ Variable clave</h3><p class="muted">Tasa promedio de llegadas de enemigos por segundo.</p></div>
+      <div class="card"><h3>🧪 Experimento</h3><p class="muted">Relacionar λ con la probabilidad de supervivencia del jugador.</p></div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <div class="kicker">Planteamiento</div><h2>De una oleada fija a un proceso aleatorio</h2>
+    <div class="grid">
+      <div class="card"><h3 class="danger">Modelo determinístico</h3><div class="formula">“Crear un enemigo cada 2 segundos”</div><p class="muted">Es predecible. Los intervalos son idénticos y no representan la variabilidad de un proceso aleatorio.</p></div>
+      <div class="card"><h3 class="accent">Modelo estocástico</h3><div class="formula">$\Delta_1,\Delta_2,\ldots \sim \operatorname{Exp}(\lambda)$</div><p class="muted">Cada intervalo entre apariciones es una variable aleatoria continua.</p></div>
+    </div>
+    <div class="flow"><div class="node">0 s</div><div class="arrow">→</div><div class="node">🧟 1.4 s</div><div class="arrow">→</div><div class="node">🧟 2.1 s</div><div class="arrow">→</div><div class="node">🧟 5.8 s</div><div class="arrow">→</div><div class="node">…</div></div>
+  </section>
+
+  <section class="slide">
+    <div class="kicker">Modelo probabilístico</div><h2>Proceso de Poisson homogéneo</h2>
+    <p class="subtitle">Sea $N(t)$ el número de enemigos que han aparecido hasta el instante $t$.</p>
+    <div class="formula">$$N(t)\sim\operatorname{Poisson}(\lambda t)$$</div>
+    <div class="formula">$$P\{N(t)=k\}=e^{-\lambda t}\frac{(\lambda t)^k}{k!}$$</div>
+    <div class="grid grid3">
+      <div class="card"><h3>Esperanza</h3><div class="big accent">$\lambda t$</div><p class="muted">Número esperado de enemigos.</p></div>
+      <div class="card"><h3>Varianza</h3><div class="big accent">$\lambda t$</div><p class="muted">Variabilidad del conteo.</p></div>
+      <div class="card"><h3>Interpretación</h3><p>Si $\lambda=0.7$ enemigos/s, se esperan en promedio $42$ enemigos por minuto.</p></div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <div class="kicker">Variable aleatoria continua</div><h2>Tiempo entre llegadas</h2>
+    <p class="subtitle">En un Proceso de Poisson homogéneo, los interarribos son Exponenciales independientes.</p>
+    <div class="formula">$$\Delta_i\sim\operatorname{Exp}(\lambda),\qquad f_\Delta(x)=\lambda e^{-\lambda x}$$</div>
+    <div class="formula">$$F_\Delta(x)=1-e^{-\lambda x},\qquad \mathbb{E}[\Delta]=\frac{1}{\lambda}$$</div>
+    <div class="card"><h3>Conexión con el juego</h3><p class="muted">$\Delta_i$ responde una pregunta concreta: <b>¿cuántos segundos faltan para que aparezca el siguiente infectado?</b></p></div>
+  </section>
+
+  <section class="slide">
+    <div class="kicker">Método visto en clase</div><h2>Transformada inversa</h2>
+    <div class="flow"><div class="node">$U_i\sim U(0,1)$</div><div class="arrow">→</div><div class="node">$\Delta_i=-\ln(U_i)/\lambda$</div><div class="arrow">→</div><div class="node">$t_i=t_{i-1}+\Delta_i$</div><div class="arrow">→</div><div class="node">🧟 Spawn</div></div>
+    <div class="formula">$$\boxed{\Delta_i=-\frac{\ln(U_i)}{\lambda}}$$</div>
+    <div class="grid">
+      <div class="card"><h3>Ejemplo</h3><p>Si $\lambda=0.7$ y $U=0.35$:</p><div class="formula">$$\Delta=-\frac{\ln(0.35)}{0.7}\approx1.50\;s$$</div></div>
+      <div class="card"><h3>Acumulación</h3><p class="muted">El nuevo instante de aparición no reemplaza al anterior; se suma al tiempo acumulado.</p><div class="formula">$$t_i=t_{i-1}+\Delta_i$$</div></div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <div class="kicker">Simulador</div><h2>Reglas del videojuego</h2>
+    <div class="grid grid3">
+      <div class="card"><h3>🧍 Jugador</h3><ul><li>Permanece en el centro.</li><li>Ataca al enemigo más cercano.</li><li>Tiene HP, DPS y alcance configurables.</li></ul></div>
+      <div class="card"><h3>🧟 Infectados</h3><ul><li>Aparecen según $t_i$.</li><li>Nacen en el perímetro.</li><li>Avanzan hacia el jugador.</li><li>Al contactar, infligen daño.</li></ul></div>
+      <div class="card"><h3>🏁 Terminación</h3><ul><li>Victoria: se alcanza $T$ con HP &gt; 0.</li><li>Derrota: HP = 0.</li><li>Se registran telemetría y eventos.</li></ul></div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <div class="kicker">Interfaz</div><h2>Dashboard Streamlit + vista 3D</h2>
+    <div class="mock">
+      <div class="metrics"><div class="metric"><small>Estado</small><b>SOBREVIVE</b></div><div class="metric"><small>HP final</small><b>34.8</b></div><div class="metric"><small>Generados</small><b>64</b></div><div class="metric"><small>Pico activos</small><b>11</b></div></div>
+      <div class="grid" style="margin-top:14px"><div class="card" style="min-height:260px"><div class="kicker">Arena táctica 3D</div><p class="muted">Jugador en el centro, infectados acercándose, ruinas, perímetro, alcance de arma y zona de contacto.</p><div class="big" style="text-align:center;margin-top:45px">🧟　🧟<br>　　<span class="accent">◆</span>　🧟<br>🧟</div></div><div class="card"><div class="kicker">Control</div><ul><li>Preset de dificultad</li><li>λ</li><li>Duración</li><li>HP / DPS / alcance</li><li>Estadísticas de los enemigos</li><li>Semilla reproducible</li></ul></div></div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <div class="kicker">Experimento</div><h2>Monte Carlo: dificultad emergente</h2>
+    <p class="subtitle">Una partida es solo una realización aleatoria. Repetimos muchas partidas para estimar $P(\text{sobrevivir})$.</p>
+    <div class="formula">$$\widehat P(\text{sobrevivir})=\frac{\text{partidas sobrevividas}}{\text{partidas simuladas}}$$</div>
+    <div class="bars"><div class="bar" style="height:92%"><span>λ=.25</span></div><div class="bar" style="height:82%"><span>λ=.50</span></div><div class="bar" style="height:66%"><span>λ=.75</span></div><div class="bar" style="height:45%"><span>λ=1.0</span></div><div class="bar" style="height:21%"><span>λ=1.25</span></div><div class="bar" style="height:8%"><span>λ=1.5</span></div></div>
+    <p class="muted" style="margin-top:3rem">Los valores de la demostración real se calculan en Streamlit; esta diapositiva muestra únicamente la relación esperada para explicar el experimento.</p>
+  </section>
+
+  <section class="slide">
+    <div class="kicker">Interpretación</div><h2>¿Qué buscamos descubrir?</h2>
+    <div class="grid">
+      <div class="card"><h3 class="accent">Pregunta central</h3><p class="big">¿Cómo cambia la supervivencia cuando aumenta $\lambda$?</p></div>
+      <div class="card"><h3>Umbral crítico</h3><p class="subtitle">Buscamos un valor aproximado $\lambda_{crit}$ a partir del cual la probabilidad de sobrevivir cae por debajo del 50%.</p><div class="formula">$$P(\text{sobrevivir}\mid\lambda_{crit})\approx0.5$$</div></div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <div class="kicker">Cierre</div><h2>Conclusiones esperadas</h2>
+    <div class="grid grid3">
+      <div class="card"><h3>1 · Matemática</h3><p class="muted">El Proceso de Poisson proporciona una base probabilística clara para modelar apariciones aleatorias.</p></div>
+      <div class="card"><h3>2 · Simulación</h3><p class="muted">La transformada inversa convierte uniformes en tiempos Exponenciales y estos tiempos alimentan directamente el juego.</p></div>
+      <div class="card"><h3>3 · Diseño</h3><p class="muted">λ funciona como un parámetro interpretable de dificultad: modifica la presión de la oleada sin programar intervalos fijos.</p></div>
+    </div>
+    <div class="formula" style="margin-top:2rem">$$\lambda\uparrow\quad\Longrightarrow\quad\text{más presión de enemigos}\quad\Longrightarrow\quad P(\text{supervivencia})\downarrow$$</div>
+    <p class="subtitle">Demo: ejecutar <b>streamlit run app.py</b> y mostrar la arena 3D, la tabla $U_i,\Delta_i,t_i$ y el experimento Monte Carlo.</p>
+  </section>
+</div>
+<div class="nav"><button onclick="prev()">← Anterior</button><button onclick="next()">Siguiente →</button></div><div class="counter" id="counter"></div><div class="hint">← → para navegar · F11 para pantalla completa</div>
+<script>
+const slides=[...document.querySelectorAll('.slide')];let i=0;function show(n){slides[i].classList.remove('active');i=(n+slides.length)%slides.length;slides[i].classList.add('active');document.getElementById('counter').textContent=`${i+1} / ${slides.length}`;if(window.MathJax?.typesetPromise)MathJax.typesetPromise([slides[i]])}function next(){show(i+1)}function prev(){show(i-1)}document.addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key===' ')next();if(e.key==='ArrowLeft')prev()});document.getElementById('counter').textContent=`1 / ${slides.length}`;
+</script>
+</body>
+</html>
