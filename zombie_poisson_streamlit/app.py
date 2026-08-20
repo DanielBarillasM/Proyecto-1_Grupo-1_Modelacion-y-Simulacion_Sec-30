@@ -1,6 +1,8 @@
+"""Aplicación Streamlit del proyecto Outbreak: Stochastic Survival Lab."""
+
 from __future__ import annotations
 
-import math
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -8,22 +10,30 @@ import streamlit as st
 
 from simulation import (
     SimulationConfig,
+    compare_arrival_models,
+    config_as_dict,
     estimate_survival_probability,
     simulate,
+    summarize_batch,
     survival_curve,
 )
 from visuals import (
     arena_3d,
     arrival_process_figure,
     interarrival_figure,
+    model_comparison_figure,
     monte_carlo_figure,
     survival_curve_figure,
     timeline_figure,
 )
 
+
+ROOT = Path(__file__).resolve().parent
+HERO_IMAGE = ROOT / "assets" / "outbreak-command-center.png"
+
 st.set_page_config(
-    page_title="Outbreak: Poisson Survival",
-    page_icon="☣️",
+    page_title="Outbreak | Stochastic Survival Lab",
+    page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -31,395 +41,516 @@ st.set_page_config(
 CUSTOM_CSS = """
 <style>
 :root {
-    --bg:#070a08; --panel:#0d1410; --panel2:#121b15; --line:#26342b;
-    --text:#e3ece6; --muted:#90a69a; --lime:#b7ff5a; --green:#82f58a;
-    --red:#ff4d5f; --amber:#ffad4d;
+    --bg:#070908; --panel:#0d1210; --panel2:#121915; --line:#29362f;
+    --text:#e8eee9; --muted:#92a29a; --lime:#c7ff73; --green:#9fe870;
+    --red:#ff5964; --amber:#f7a64a; --blue:#68b8d8;
 }
 .stApp {
     background:
-      radial-gradient(circle at 15% 0%, rgba(99,160,83,.14), transparent 34%),
-      radial-gradient(circle at 92% 8%, rgba(125,35,39,.12), transparent 30%),
-      linear-gradient(180deg, #060806 0%, #090d0a 100%);
-    color: var(--text);
+      radial-gradient(circle at 18% -8%, rgba(113,155,79,.16), transparent 32%),
+      radial-gradient(circle at 95% 8%, rgba(137,39,46,.13), transparent 28%),
+      linear-gradient(180deg,#060806 0%,#090d0a 100%);
+    color:var(--text);
 }
 [data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0b100d, #090c0a);
-    border-right: 1px solid var(--line);
+    background:linear-gradient(180deg,#0c110e,#080b09);
+    border-right:1px solid var(--line);
 }
-.block-container { padding-top: 1.5rem; padding-bottom: 4rem; max-width: 1500px; }
-.hero {
-    position: relative; overflow: hidden; border: 1px solid #2b3a31; border-radius: 24px;
-    padding: 28px 32px; margin-bottom: 18px;
-    background: linear-gradient(120deg, rgba(13,20,16,.96), rgba(8,12,9,.92));
-    box-shadow: 0 18px 60px rgba(0,0,0,.28);
-}
-.hero:after {
-    content:""; position:absolute; inset:-30% -10% auto auto; width:360px; height:360px;
-    border-radius:50%; background:radial-gradient(circle, rgba(183,255,90,.14), transparent 68%);
-}
-.kicker { color:var(--lime); font-size:.78rem; letter-spacing:.18em; text-transform:uppercase; font-weight:800; }
-.hero h1 { margin:.2rem 0 .25rem; font-size:clamp(2rem,4vw,3.7rem); line-height:1; letter-spacing:-.045em; }
-.hero p { color:var(--muted); font-size:1.03rem; max-width:900px; margin:.7rem 0 0; }
-.badge {
-    display:inline-block; margin:.7rem .45rem 0 0; padding:.28rem .62rem; border:1px solid #33473a;
-    border-radius:999px; background:#101812; color:#bdd0c2; font-size:.76rem;
-}
-.section-label { color:var(--lime); font-size:.74rem; letter-spacing:.16em; text-transform:uppercase; font-weight:800; margin-bottom:.2rem; }
-.panel {
-    background:linear-gradient(180deg, rgba(16,24,18,.92), rgba(11,17,13,.92));
-    border:1px solid var(--line); border-radius:18px; padding:18px 20px; margin:.35rem 0 1rem;
-}
-.callout {
-    border-left:3px solid var(--lime); background:#0d1510; border-radius:10px;
-    padding:13px 16px; color:#c8d7cd; margin:.6rem 0 1rem;
-}
-.danger { border-left-color:var(--red); }
-.small { color:var(--muted); font-size:.88rem; }
-hr { border-color:var(--line) !important; }
-[data-testid="stMetric"] {
-    background:linear-gradient(180deg,#101812,#0c120e); border:1px solid var(--line);
-    padding:14px 16px; border-radius:16px;
-}
-[data-testid="stMetricLabel"] { color:#9eb0a5; }
-[data-testid="stMetricValue"] { color:#f0f7f2; letter-spacing:-.04em; }
-.stButton > button {
-    border-radius:12px; border:1px solid #47603f; background:linear-gradient(180deg,#1a2a1d,#121d15);
-    color:#dcf7d6; font-weight:750; min-height:44px;
-}
-.stButton > button:hover { border-color:var(--lime); color:white; }
-.stTabs [data-baseweb="tab-list"] { gap:.45rem; }
-.stTabs [data-baseweb="tab"] { background:#0f1711; border:1px solid var(--line); border-radius:11px; padding:.6rem .95rem; }
-.stTabs [aria-selected="true"] { border-color:#6b8e5d !important; color:var(--lime) !important; }
-code { color:#d6ffad !important; }
+[data-testid="stSidebar"] .block-container {padding-top:1.2rem}
+.block-container {padding-top:1.3rem;padding-bottom:4rem;max-width:1540px}
+.eyebrow {color:var(--lime);font-size:.72rem;letter-spacing:.19em;text-transform:uppercase;font-weight:800}
+.hero-copy {padding:18px 0 8px}
+.hero-copy h1 {font-size:clamp(2.5rem,5vw,5.4rem);line-height:.88;letter-spacing:-.06em;margin:.45rem 0 1rem}
+.hero-copy p {color:var(--muted);font-size:1.02rem;line-height:1.7;max-width:760px}
+.hero-copy .rule {width:72px;height:4px;background:var(--lime);border-radius:10px;margin:1.3rem 0}
+.stImage img {border-radius:22px;border:1px solid #334139;box-shadow:0 22px 70px rgba(0,0,0,.36)}
+.section-title {margin:1.2rem 0 .7rem;padding-bottom:.55rem;border-bottom:1px solid var(--line)}
+.section-title small {display:block;color:var(--lime);letter-spacing:.16em;text-transform:uppercase;font-weight:800;font-size:.68rem}
+.section-title strong {font-size:1.28rem;letter-spacing:-.02em}
+.status-strip {border:1px solid var(--line);border-left:4px solid var(--lime);border-radius:14px;padding:13px 16px;background:#0e1511;margin:.4rem 0 1rem}
+.status-strip.failed {border-left-color:var(--red)}
+.callout {border:1px solid var(--line);border-radius:14px;padding:15px 17px;background:#0d1410;color:#c8d3cc;margin:.7rem 0 1rem}
+.callout.blue {border-left:3px solid var(--blue)}
+.callout.amber {border-left:3px solid var(--amber)}
+.model-card {height:100%;border:1px solid var(--line);border-radius:18px;padding:18px;background:linear-gradient(180deg,#111813,#0c110e)}
+.model-card h3 {margin:.2rem 0 .6rem}.model-card p {color:var(--muted);line-height:1.55}
+.tag {display:inline-block;border:1px solid #3a4b40;border-radius:999px;padding:.24rem .55rem;margin:.3rem .25rem .2rem 0;color:#bac8c0;font-size:.72rem}
+[data-testid="stMetric"] {background:linear-gradient(180deg,#111813,#0c120e);border:1px solid var(--line);padding:13px 15px;border-radius:15px}
+[data-testid="stMetricLabel"] {color:#9caca3}[data-testid="stMetricValue"] {color:#f0f5f1;letter-spacing:-.04em}
+.stButton>button,.stFormSubmitButton>button {border-radius:12px;border:1px solid #587345;background:linear-gradient(180deg,#21301e,#151f16);color:#e9f7df;font-weight:800;min-height:46px;letter-spacing:.025em}
+.stButton>button:hover,.stFormSubmitButton>button:hover {border-color:var(--lime);color:white}
+.stTabs [data-baseweb="tab-list"] {gap:.42rem;border-bottom:1px solid var(--line);padding-bottom:.55rem}
+.stTabs [data-baseweb="tab"] {background:#0e1510;border:1px solid var(--line);border-radius:10px;padding:.62rem .95rem}
+.stTabs [aria-selected="true"] {border-color:#738f5d!important;color:var(--lime)!important}
+code {color:#d8ffae!important} hr {border-color:var(--line)!important}
+@media(max-width:800px){.hero-copy h1{font-size:3rem}.block-container{padding-top:.8rem}}
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 
 @st.cache_data(show_spinner=False)
-def run_main(config_dict: dict) -> object:
+def run_main(config_dict: dict[str, object]):
     return simulate(SimulationConfig(**config_dict), keep_timeline=True)
 
 
 @st.cache_data(show_spinner=False)
-def run_monte_carlo(config_dict: dict, runs: int) -> pd.DataFrame:
+def run_monte_carlo(config_dict: dict[str, object], runs: int) -> pd.DataFrame:
     return estimate_survival_probability(SimulationConfig(**config_dict), runs=runs)
 
 
 @st.cache_data(show_spinner=False)
-def run_curve(config_dict: dict, lambdas: tuple[float, ...], runs_per_lambda: int) -> pd.DataFrame:
-    return survival_curve(SimulationConfig(**config_dict), list(lambdas), runs_per_lambda=runs_per_lambda)
+def run_comparison(config_dict: dict[str, object], runs: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+    return compare_arrival_models(SimulationConfig(**config_dict), runs=runs)
 
 
+@st.cache_data(show_spinner=False)
+def run_curve(
+    config_dict: dict[str, object], lambdas: tuple[float, ...], runs_per_lambda: int
+) -> pd.DataFrame:
+    return survival_curve(
+        SimulationConfig(**config_dict), list(lambdas), runs_per_lambda=runs_per_lambda
+    )
+
+
+def section_header(kicker: str, title: str) -> None:
+    st.markdown(
+        f'<div class="section-title"><small>{kicker}</small><strong>{title}</strong></div>',
+        unsafe_allow_html=True,
+    )
+
+
+with st.sidebar:
+    st.markdown('<div class="eyebrow">Centro de control</div>', unsafe_allow_html=True)
+    st.markdown("## Configurar misión")
+    st.caption("Los cambios solo se aplican al pulsar el botón final del formulario.")
+
+    with st.form("mission_configuration", border=False):
+        model_label = st.radio(
+            "Modelo de llegadas",
+            ["Poisson", "Polar-lognormal"],
+            help="Poisson usa interarribos exponenciales. Polar-lognormal usa normales de Marsaglia para construir tiempos positivos.",
+        )
+        arrivals_per_minute = st.slider(
+            "Llegadas esperadas por minuto",
+            min_value=6.0,
+            max_value=90.0,
+            value=39.0,
+            step=1.0,
+            help="Se convierte internamente a lambda por segundo.",
+        )
+        duration = st.slider("Duración de la misión (s)", 30, 180, 90, 10)
+        polar_cv = st.slider(
+            "Variabilidad Polar (CV)",
+            0.15,
+            1.20,
+            0.45,
+            0.05,
+            help="Solo afecta al modelo Polar-lognormal. Un CV menor genera llegadas más regulares.",
+        )
+
+        with st.expander("Capacidad del sobreviviente", expanded=False):
+            player_hp = st.slider("Vida inicial (HP)", 60, 200, 110, 5)
+            player_dps = st.slider("Daño por segundo", 15, 90, 42, 1)
+            weapon_range = st.slider("Alcance del arma (m)", 5.0, 15.0, 10.0, 0.5)
+
+        with st.expander("Características de los infectados", expanded=False):
+            enemy_hp = st.slider("Vida base (HP)", 20, 100, 42, 2)
+            enemy_speed = st.slider("Velocidad base (m/s)", 0.8, 3.0, 1.55, 0.05)
+            enemy_dps = st.slider("Daño de contacto por segundo", 3.0, 20.0, 9.0, 0.5)
+
+        with st.expander("Reproducibilidad y precisión", expanded=False):
+            seed = st.number_input("Semilla", 1, 999999, 22193, 1)
+            dt = st.select_slider(
+                "Paso temporal dt (s)", options=[0.10, 0.05, 0.025], value=0.05
+            )
+
+        submitted = st.form_submit_button(
+            "SIMULAR MISIÓN", type="primary", width="stretch"
+        )
+
+    if submitted:
+        selected_model = "poisson" if model_label == "Poisson" else "polar"
+        new_config = SimulationConfig(
+            duration=float(duration),
+            lambda_rate=float(arrivals_per_minute / 60.0),
+            arrival_model=selected_model,
+            polar_cv=float(polar_cv),
+            player_hp=float(player_hp),
+            player_dps=float(player_dps),
+            weapon_range=float(weapon_range),
+            enemy_hp=float(enemy_hp),
+            enemy_speed=float(enemy_speed),
+            enemy_dps=float(enemy_dps),
+            dt=float(dt),
+            seed=int(seed),
+        )
+        st.session_state["active_config"] = config_as_dict(new_config)
+        st.session_state["simulation_count"] = st.session_state.get("simulation_count", 0) + 1
+        st.session_state.pop("comparison_result", None)
+        st.session_state.pop("mc_result", None)
+
+    st.markdown("---")
+    st.caption(
+        "Consejo: mantén la misma semilla para reproducir una partida o cámbiala para observar otra realización."
+    )
+
+
+hero_left, hero_right = st.columns([1.15, 1], gap="large", vertical_alignment="center")
+with hero_left:
+    st.markdown(
+        """
+        <div class="hero-copy">
+          <div class="eyebrow">Laboratorio de Modelación y Simulación</div>
+          <h1>OUTBREAK:<br>STOCHASTIC<br>SURVIVAL</h1>
+          <div class="rule"></div>
+          <p>
+            Un experimento reproducible sobre llegadas aleatorias, presión de combate y
+            probabilidad de supervivencia. Compara un proceso de Poisson con una alternativa
+            de renovación construida mediante el método polar de Marsaglia.
+          </p>
+          <span class="tag">Proceso de Poisson</span>
+          <span class="tag">Marsaglia Polar</span>
+          <span class="tag">Monte Carlo</span>
+          <span class="tag">Escena 3D procedural</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+with hero_right:
+    if HERO_IMAGE.exists():
+        st.image(HERO_IMAGE, width="stretch")
+
+
+if "active_config" not in st.session_state:
+    st.markdown(
+        """
+        <div class="status-strip">
+          <strong>Simulador preparado.</strong><br>
+          Revisa los parámetros del centro de control y pulsa <b>SIMULAR MISIÓN</b>
+          para generar la primera realización.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    section_header("Antes de comenzar", "Qué observar durante el experimento")
+    a, b, c = st.columns(3)
+    a.markdown("**Llegadas**\n\nCada enemigo aparece en un instante aleatorio acumulado.")
+    b.markdown("**Combate**\n\nEl sistema actualiza movimiento, ataque y daño cada `dt` segundos.")
+    c.markdown("**Inferencia**\n\nMuchas partidas permiten estimar la probabilidad de sobrevivir.")
+    st.stop()
+
+
+config = SimulationConfig(**st.session_state["active_config"])
+result = run_main(config_as_dict(config))
+model_name = "Poisson" if config.arrival_model == "poisson" else "Polar-lognormal"
+status_class = "" if result.survived else " failed"
+status_title = "MISIÓN COMPLETADA" if result.survived else "MISIÓN FALLIDA"
+status_detail = (
+    "El sobreviviente alcanzó el horizonte temporal."
+    if result.survived
+    else "El HP llegó a cero antes del horizonte temporal."
+)
 st.markdown(
-    """
-    <div class="hero">
-      <div class="kicker">Modelación y Simulación · Variables Aleatorias Continuas</div>
-      <h1>OUTBREAK: POISSON SURVIVAL</h1>
-      <p>
-        Simulador de oleadas de infectados en un videojuego de supervivencia. La llegada de enemigos
-        se modela como un <b>Proceso de Poisson homogéneo</b>; sus tiempos entre llegadas se generan
-        con la <b>transformada inversa de la distribución Exponencial</b>.
-      </p>
-      <span class="badge">Python</span><span class="badge">Streamlit</span>
-      <span class="badge">Poisson Process</span><span class="badge">3D Tactical View</span>
-      <span class="badge">Monte Carlo</span>
-    </div>
-    """,
+    f'<div class="status-strip{status_class}"><strong>{status_title}</strong> | '
+    f'{model_name} | semilla {config.seed}<br>{status_detail}</div>',
     unsafe_allow_html=True,
 )
 
-with st.sidebar:
-    st.markdown("## ☣️ Centro de mando")
-    st.caption("Configura la presión de la oleada y la capacidad del sobreviviente.")
+metrics = st.columns(6)
+metrics[0].metric("Tiempo resistido", f"{result.survival_time:.1f} s", f"de {config.duration:.0f} s")
+metrics[1].metric("HP final", f"{result.final_hp:.1f}", f"{result.final_hp-config.player_hp:+.1f}")
+metrics[2].metric("Llegadas ocurridas", result.generated, f"E[N]={result.expected_arrivals:.1f}")
+metrics[3].metric("Eliminados", result.eliminated, f"{100*result.eliminated/max(result.generated,1):.0f} %")
+metrics[4].metric("Activos al cierre", result.remaining)
+metrics[5].metric("Pico simultáneo", result.max_concurrent)
 
-    presets = {
-        "Exploración": 0.25,
-        "Supervivencia": 0.70,
-        "Pesadilla": 1.15,
-        "Extinción": 1.70,
-    }
-    if "lambda_rate" not in st.session_state:
-        st.session_state.lambda_rate = 0.70
+simulation_tab, math_tab, comparison_tab, monte_carlo_tab, guide_tab = st.tabs([
+    "Simulación 3D",
+    "Desarrollo matemático",
+    "Comparación de modelos",
+    "Laboratorio Monte Carlo",
+    "Guía del proyecto",
+])
 
-    def apply_difficulty_preset() -> None:
-        selected = st.session_state.difficulty_preset
-        if selected in presets:
-            st.session_state.lambda_rate = presets[selected]
 
-    difficulty = st.selectbox(
-        "Preset de dificultad",
-        ["Personalizado", "Exploración", "Supervivencia", "Pesadilla", "Extinción"],
-        index=2,
-        key="difficulty_preset",
-        on_change=apply_difficulty_preset,
-    )
-
-    lam = st.slider(
-        "Tasa de llegada λ (enemigos/s)", 0.05, 2.50, step=0.05, key="lambda_rate"
-    )
-    duration = st.slider("Duración de la misión (s)", 30, 180, 90, 10)
-
-    st.markdown("---")
-    st.markdown("### 🧍 Sobreviviente")
-    player_hp = st.slider("Vida inicial", 60, 200, 110, 10)
-    player_dps = st.slider("Daño por segundo (DPS)", 15, 90, 42, 1)
-    weapon_range = st.slider("Alcance del arma (m)", 5.0, 16.0, 10.0, 0.5)
-
-    st.markdown("### 🧟 Infectados")
-    enemy_hp = st.slider("Vida base del enemigo", 20, 100, 42, 2)
-    enemy_speed = st.slider("Velocidad base (m/s)", 0.8, 3.0, 1.55, 0.05)
-    enemy_dps = st.slider("Daño base por segundo", 3.0, 20.0, 9.0, 0.5)
-
-    st.markdown("---")
-    seed = st.number_input("Semilla reproducible", min_value=1, max_value=999999, value=22193, step=1)
-    st.caption("Una misma semilla + parámetros reproduce la misma partida.")
-
-config = SimulationConfig(
-    duration=float(duration),
-    lambda_rate=float(lam),
-    player_hp=float(player_hp),
-    player_dps=float(player_dps),
-    weapon_range=float(weapon_range),
-    enemy_hp=float(enemy_hp),
-    enemy_speed=float(enemy_speed),
-    enemy_dps=float(enemy_dps),
-    seed=int(seed),
-)
-
-result = run_main(config.__dict__)
-
-# Header metrics.
-st.markdown('<div class="section-label">Telemetría de la misión</div>', unsafe_allow_html=True)
-cols = st.columns(6)
-status = "SOBREVIVE" if result.survived else "CAÍDO"
-cols[0].metric("Estado", status)
-cols[1].metric("Tiempo", f"{result.survival_time:.1f} s", f"de {config.duration:.0f} s")
-cols[2].metric("HP final", f"{result.final_hp:.1f}", f"{result.final_hp-config.player_hp:+.1f}")
-cols[3].metric("Generados", f"{result.generated}", f"E[N]={result.expected_arrivals:.1f}")
-cols[4].metric("Eliminados", f"{result.eliminated}", f"{(100*result.eliminated/max(result.generated,1)):.0f}%")
-cols[5].metric("Pico activos", f"{result.max_concurrent}")
-
-main_tab, math_tab, stats_tab, lab_tab = st.tabs(
-    ["🎮 Simulación 3D", "🧮 Modelo matemático", "📊 Análisis estadístico", "🧪 Monte Carlo"]
-)
-
-with main_tab:
-    left, right = st.columns([1.9, 1], gap="large")
+with simulation_tab:
+    section_header("Escena interactiva", "Explorar la partida en el tiempo")
+    left, right = st.columns([2.05, 1], gap="large")
     with left:
         t_view = st.slider(
-            "Explorar estado de la arena en el tiempo",
-            min_value=0.0,
-            max_value=float(max(result.survival_time, 0.1)),
-            value=float(max(result.survival_time, 0.1)),
-            step=0.5,
+            "Instante de observación (s)",
+            0.0,
+            float(max(result.survival_time, 0.1)),
+            float(max(result.survival_time, 0.1)),
+            0.5,
+            key="timeline_explorer",
         )
-        st.plotly_chart(arena_3d(result, t_view), width="stretch", config={"displaylogo": False})
-        st.caption("Arrastra para rotar · rueda para zoom · la circunferencia verde representa el alcance del arma.")
-
+        st.plotly_chart(arena_3d(result, t_view), use_container_width=True, config={"displaylogo": False})
+        st.caption(
+            "Arrastra para rotar, usa la rueda para acercar y pasa el cursor sobre los infectados. "
+            "El anillo verde marca el alcance; el rojo, la zona de contacto."
+        )
     with right:
-        if result.survived:
-            st.success("MISIÓN COMPLETADA · El sobreviviente resistió hasta el final.")
-        else:
-            st.error("GAME OVER · La presión de la oleada superó la capacidad defensiva.")
-
+        closest_row = result.timeline.iloc[(result.timeline["time"] - t_view).abs().argmin()]
+        st.markdown("### Estado seleccionado")
+        state_cols = st.columns(2)
+        state_cols[0].metric("HP", f"{closest_row['player_hp']:.1f}")
+        state_cols[1].metric("Activos", int(closest_row["active_enemies"]))
+        state_cols[0].metric("Llegadas", int(closest_row["spawned"]))
+        state_cols[1].metric("Bajas", int(closest_row["eliminated"]))
         st.markdown(
             f"""
-            <div class="panel">
-              <div class="section-label">Lectura rápida</div>
-              <b>λ = {config.lambda_rate:.2f}</b> enemigos/s significa que, bajo el modelo,
-              se esperan en promedio <b>{config.lambda_rate*60:.1f} enemigos por minuto</b>.
-              El tiempo medio teórico entre llegadas es
-              <b>1/λ = {1/config.lambda_rate:.2f} s</b>.
+            <div class="callout amber">
+              <b>Lectura de lambda</b><br>
+              {config.lambda_rate*60:.1f} llegadas/min implica un interarribo medio de
+              {1/config.lambda_rate:.2f} s. El modelo activo es <b>{model_name}</b>.
             </div>
             """,
             unsafe_allow_html=True,
         )
-
-        now = result.timeline.iloc[(result.timeline["time"] - t_view).abs().argmin()]
-        c1, c2 = st.columns(2)
-        c1.metric("HP en t", f"{now['player_hp']:.1f}")
-        c2.metric("Enemigos activos", f"{int(now['active_enemies'])}")
-        c1.metric("Generados hasta t", f"{int(now['spawned'])}")
-        c2.metric("Eliminados hasta t", f"{int(now['eliminated'])}")
-
-        st.markdown("#### Reglas del simulador")
+        st.markdown("**Reglas operativas**")
         st.markdown(
             """
-            - El jugador permanece en el centro y ataca al enemigo vivo más cercano dentro de su alcance.
-            - Los infectados nacen en el perímetro y avanzan hacia el jugador.
-            - Al entrar en distancia de contacto, cada infectado vivo inflige daño de forma concurrente.
-            - La misión termina cuando el HP llega a 0 o cuando se alcanza el tiempo objetivo.
+            1. El jugador permanece en el centro.
+            2. Ataca al objetivo vivo más cercano dentro del alcance.
+            3. Los infectados avanzan radialmente y dañan al contactar.
+            4. Los atacantes en contacto suman su daño.
+            5. La misión termina al agotar HP o alcanzar el tiempo objetivo.
             """
         )
+    st.plotly_chart(timeline_figure(result), use_container_width=True, config={"displaylogo": False})
 
-    st.plotly_chart(timeline_figure(result), width="stretch", config={"displaylogo": False})
 
 with math_tab:
-    st.markdown("## Fundamento matemático")
+    section_header("Modelo estocástico", "De uniformes a instantes de aparición")
     st.markdown(
         """
-        <div class="callout">
-        La aleatoriedad principal del juego no consiste en decidir manualmente cada cuántos segundos aparece
-        un enemigo. Se modela la secuencia de apariciones como un <b>Proceso de Poisson homogéneo</b>
-        con tasa constante λ.
+        <div class="callout blue">
+          El conteo <b>N(t)</b> es discreto. Los tiempos entre llegadas <b>Delta</b>
+          son variables aleatorias continuas. La simulación conecta ambos mediante
+          la suma acumulada de interarribos.
         </div>
         """,
         unsafe_allow_html=True,
     )
-
-    st.markdown("### 1. Proceso de Poisson")
-    st.markdown("Sea $N(t)$ el número de enemigos que han aparecido hasta el instante $t$.")
-    st.latex(r"N(t)\sim \operatorname{Poisson}(\lambda t)")
-    st.latex(r"P\{N(t)=k\}=e^{-\lambda t}\frac{(\lambda t)^k}{k!},\qquad k=0,1,2,\ldots")
-    st.latex(r"\mathbb{E}[N(t)]=\lambda t,\qquad \operatorname{Var}[N(t)]=\lambda t")
-
-    st.markdown("### 2. Variable aleatoria continua: tiempo entre llegadas")
-    st.markdown(
-        "En un Proceso de Poisson homogéneo, los tiempos entre eventos son independientes y siguen una distribución Exponencial:"
-    )
-    st.latex(r"\Delta_i\sim \operatorname{Exp}(\lambda)")
-    st.latex(r"f_{\Delta}(x)=\lambda e^{-\lambda x},\qquad x\ge 0")
-    st.latex(r"F_{\Delta}(x)=1-e^{-\lambda x}")
-
-    st.markdown("### 3. Método de la inversa")
-    st.markdown(r"Tomamos $U_i\sim U(0,1)$ y resolvemos la inversa de la función acumulada.")
-    st.latex(r"U=1-e^{-\lambda x}")
-    st.latex(r"e^{-\lambda x}=1-U")
-    st.latex(r"x=-\frac{\ln(1-U)}{\lambda}")
-    st.markdown("Como $1-U$ también es uniforme en $(0,1)$, se utiliza la forma equivalente:")
-    st.latex(r"\boxed{\Delta_i=-\frac{\ln(U_i)}{\lambda}}")
-
-    st.markdown("### 4. Construcción de los instantes de aparición")
-    st.latex(r"t_0=0")
-    st.latex(r"t_i=t_{i-1}+\Delta_i")
-    st.markdown(
-        "Así, cada $t_i$ es el instante de aparición del enemigo $i$. Este es exactamente el mecanismo implementado por el simulador."
-    )
-
-    theory1, theory2, theory3 = st.columns(3)
-    theory1.metric("λ actual", f"{config.lambda_rate:.2f} enemigos/s")
-    theory2.metric("E[Δ] = 1/λ", f"{1/config.lambda_rate:.3f} s")
-    theory3.metric("E[N(T)] = λT", f"{config.lambda_rate*config.duration:.1f}")
-
-    st.markdown("### Primeras generaciones aleatorias de esta partida")
-    if result.arrivals.empty:
-        st.info("No hubo llegadas dentro del horizonte temporal seleccionado.")
-    else:
-        explain = result.arrivals.head(20).copy()
-        explain.columns = ["Enemigo", "Uᵢ", "Δᵢ (s)", "tᵢ (s)"]
-        st.dataframe(
-            explain.style.format({"Uᵢ": "{:.6f}", "Δᵢ (s)": "{:.4f}", "tᵢ (s)": "{:.4f}"}),
-            width="stretch",
-            hide_index=True,
+    poisson_col, polar_col = st.columns(2)
+    with poisson_col:
+        st.markdown(
+            """
+            <div class="model-card">
+              <div class="eyebrow">Modelo 1</div><h3>Proceso de Poisson</h3>
+              <p>Llegadas independientes, tasa constante y propiedad de falta de memoria.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
+        st.latex(r"N(t)\sim\operatorname{Poisson}(\lambda t)")
+        st.latex(r"P\{N(t)=k\}=e^{-\lambda t}\frac{(\lambda t)^k}{k!}")
+        st.latex(r"\Delta_i=-\frac{\ln(U_i)}{\lambda},\quad U_i\sim U(0,1)")
+        st.latex(r"\mathbb E[N(t)]=\operatorname{Var}[N(t)]=\lambda t")
+    with polar_col:
+        st.markdown(
+            """
+            <div class="model-card">
+              <div class="eyebrow">Modelo 2</div><h3>Renovación Polar-lognormal</h3>
+              <p>Marsaglia Polar genera normales; una transformación lognormal produce interarribos positivos.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.latex(r"V_1,V_2\sim U(-1,1),\quad S=V_1^2+V_2^2<1")
+        st.latex(r"Z=V_1\sqrt{\frac{-2\ln S}{S}}\sim N(0,1)")
+        st.latex(r"\Delta_i=e^{\mu+\sigma Z_i}")
+        st.latex(r"\sigma^2=\ln(1+CV^2),\quad \mu=\ln(1/\lambda)-\sigma^2/2")
 
-    st.markdown("### Supuestos del modelo")
+    st.markdown("### Construcción común")
+    st.latex(r"t_0=0,\qquad t_i=t_{i-1}+\Delta_i")
+    theory = st.columns(4)
+    theory[0].metric("Tasa", f"{config.lambda_rate*60:.1f}/min")
+    theory[1].metric("E[Delta]", f"{1/config.lambda_rate:.3f} s")
+    theory[2].metric("E[N(T)]", f"{config.lambda_rate*config.duration:.1f}")
+    theory[3].metric("Paso dt", f"{config.dt:.3f} s")
+
+    st.markdown("### Primeras variables generadas")
+    if result.arrivals.empty:
+        st.info("No ocurrieron llegadas antes de finalizar la misión.")
+    elif config.arrival_model == "poisson":
+        table = result.arrivals[["enemy_id", "u", "delta", "arrival_time"]].head(20).copy()
+        table.columns = ["Enemigo", "U", "Delta (s)", "t (s)"]
+        st.dataframe(table.style.format({"U": "{:.6f}", "Delta (s)": "{:.4f}", "t (s)": "{:.4f}"}), width="stretch", hide_index=True)
+    else:
+        table = result.arrivals[["enemy_id", "polar_v1", "polar_v2", "z", "delta", "arrival_time"]].head(20).copy()
+        table.columns = ["Enemigo", "V1", "V2", "Z", "Delta (s)", "t (s)"]
+        st.dataframe(table.style.format({"V1": "{:.5f}", "V2": "{:.5f}", "Z": "{:.5f}", "Delta (s)": "{:.4f}", "t (s)": "{:.4f}"}), width="stretch", hide_index=True)
+
+    chart_left, chart_right = st.columns(2)
+    with chart_left:
+        st.plotly_chart(arrival_process_figure(result), use_container_width=True, config={"displaylogo": False})
+    with chart_right:
+        st.plotly_chart(interarrival_figure(result), use_container_width=True, config={"displaylogo": False})
+    st.caption(
+        "El histograma usa interarribos observados antes del cierre y sirve como diagnóstico visual; "
+        "la truncación temporal puede sesgar una muestra pequeña y no sustituye una prueba formal."
+    )
+
+
+with comparison_tab:
+    section_header("Experimento pareado", "Poisson frente a Polar-lognormal")
     st.markdown(
-        r"""
-        1. **Tasa constante:** λ se mantiene fija durante una simulación individual.
-        2. **Incrementos independientes:** las llegadas en intervalos disjuntos son independientes.
-        3. **Eventos individuales:** la probabilidad de dos o más llegadas en un intervalo infinitesimal es despreciable.
-        4. **Interarribos exponenciales:** los $\Delta_i$ son i.i.d. con distribución Exponencial$(\lambda)$.
+        """
+        Ambos modelos conservan el mismo interarribo medio. Poisson permite rachas y pausas largas
+        por su distribución exponencial (CV = 1). La alternativa Polar-lognormal usa el CV elegido
+        para controlar regularidad. Las mismas semillas de corrida reducen ruido al comparar.
         """
     )
-
-with stats_tab:
-    st.markdown("## Diagnóstico estadístico del proceso")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.plotly_chart(arrival_process_figure(result), width="stretch", config={"displaylogo": False})
-    with c2:
-        st.plotly_chart(interarrival_figure(result), width="stretch", config={"displaylogo": False})
-
-    observed_mean = result.mean_interarrival
-    theoretical_mean = 1 / config.lambda_rate
-    rel_error = abs(observed_mean - theoretical_mean) / theoretical_mean * 100 if not math.isnan(observed_mean) else float("nan")
-
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Δ medio observado", "—" if math.isnan(observed_mean) else f"{observed_mean:.3f} s")
-    m2.metric("Δ medio teórico", f"{theoretical_mean:.3f} s")
-    m3.metric("Llegadas observadas", f"{len(result.arrivals)}")
-    m4.metric("Error relativo Δ", "—" if math.isnan(rel_error) else f"{rel_error:.1f}%")
-
-    st.markdown(
-        """
-        <div class="callout">
-        En una sola realización es normal observar diferencias respecto al valor esperado. Al repetir muchas
-        partidas, los promedios empíricos deben estabilizarse alrededor de los valores teóricos del modelo.
-        </div>
-        """,
-        unsafe_allow_html=True,
+    comparison_runs = st.select_slider(
+        "Partidas por modelo", options=[50, 100, 200, 400], value=100, key="comparison_runs"
     )
-
-with lab_tab:
-    st.markdown("## Laboratorio Monte Carlo")
-    st.write(
-        "Repite automáticamente el mismo escenario con semillas distintas para estimar la probabilidad de supervivencia."
-    )
-
-    c1, c2, c3 = st.columns([1, 1, 1.4])
-    runs = c1.select_slider("Número de partidas", options=[50, 100, 200, 400], value=100)
-    curve_runs = c2.select_slider("Partidas por punto de λ", options=[20, 40, 60, 80], value=40)
-    c3.caption("Más repeticiones reducen el ruido Monte Carlo, pero requieren más tiempo de cómputo.")
-
-    experiment_signature = (tuple(sorted(config.__dict__.items())), int(runs), int(curve_runs))
-    if st.button("▶ Ejecutar experimento Monte Carlo", type="primary", width="stretch"):
-        with st.spinner("Ejecutando partidas y construyendo la curva de dificultad..."):
-            batch = run_monte_carlo(config.__dict__, int(runs))
-            lambda_grid = tuple(
-                np.round(
-                    np.linspace(
-                        max(0.10, config.lambda_rate * 0.35),
-                        min(2.5, config.lambda_rate * 1.9 + 0.2),
-                        9,
-                    ),
-                    2,
-                )
+    if st.button("EJECUTAR COMPARACIÓN POISSON VS POLAR", type="primary", width="stretch"):
+        with st.spinner("Ejecutando el experimento pareado..."):
+            trials, summary = run_comparison(config_as_dict(config), int(comparison_runs))
+        st.session_state["comparison_result"] = {
+            "signature": (tuple(sorted(config_as_dict(config).items())), int(comparison_runs)),
+            "trials": trials,
+            "summary": summary,
+        }
+    comparison_saved = st.session_state.get("comparison_result")
+    comparison_signature = (tuple(sorted(config_as_dict(config).items())), int(comparison_runs))
+    if comparison_saved is None:
+        st.info("Ejecuta la comparación para obtener resultados con la configuración actual.")
+    elif comparison_saved["signature"] != comparison_signature:
+        st.warning("La configuración o el número de partidas cambió. Ejecuta nuevamente.")
+    else:
+        summary = comparison_saved["summary"]
+        trials = comparison_saved["trials"]
+        left, right = st.columns([1.4, 1])
+        with left:
+            st.plotly_chart(model_comparison_figure(summary), use_container_width=True, config={"displaylogo": False})
+        with right:
+            display_summary = summary.copy()
+            display_summary["model"] = display_summary["model"].map({"poisson": "Poisson", "polar": "Polar-lognormal"})
+            display_summary["IC 95 %"] = display_summary.apply(
+                lambda row: f"[{row['ci_low']*100:.1f} %, {row['ci_high']*100:.1f} %]", axis=1
             )
-            curve = run_curve(config.__dict__, lambda_grid, int(curve_runs))
+            display_summary = display_summary[["model", "survival_probability", "IC 95 %", "mean_survival_time", "mean_generated", "mean_max_concurrent"]]
+            display_summary.columns = ["Modelo", "P(supervivencia)", "IC 95 %", "Tiempo medio", "Llegadas medias", "Pico medio"]
+            st.dataframe(display_summary.style.format({"P(supervivencia)": "{:.1%}", "Tiempo medio": "{:.2f}", "Llegadas medias": "{:.2f}", "Pico medio": "{:.2f}"}), width="stretch", hide_index=True)
+            poisson_p = float(summary.loc[summary["model"] == "poisson", "survival_probability"].iloc[0])
+            polar_p = float(summary.loc[summary["model"] == "polar", "survival_probability"].iloc[0])
+            difference = (poisson_p - polar_p) * 100
+            st.markdown(
+                f'<div class="callout blue"><b>Diferencia observada</b><br>'
+                f'Poisson - Polar = {difference:+.1f} puntos porcentuales. '
+                f'La conveniencia de Poisson se justifica por sus supuestos y parsimonia, no por garantizar mayor supervivencia.</div>',
+                unsafe_allow_html=True,
+            )
+        with st.expander("Ver corridas del experimento"):
+            st.dataframe(trials, width="stretch", hide_index=True)
+
+
+with monte_carlo_tab:
+    section_header("Inferencia por repetición", f"Probabilidad de supervivencia bajo {model_name}")
+    run_col, curve_col = st.columns(2)
+    runs = run_col.select_slider("Partidas del escenario", [50, 100, 200, 400], value=100)
+    curve_runs = curve_col.select_slider("Partidas por punto de la curva", [20, 40, 60, 80], value=40)
+    mc_signature = (tuple(sorted(config_as_dict(config).items())), int(runs), int(curve_runs))
+    if st.button("EJECUTAR LABORATORIO MONTE CARLO", type="primary", width="stretch"):
+        with st.spinner("Simulando partidas y estimando incertidumbre..."):
+            batch = run_monte_carlo(config_as_dict(config), int(runs))
+            lambda_grid = tuple(np.round(np.linspace(
+                max(0.08, config.lambda_rate * 0.45),
+                min(1.8, config.lambda_rate * 1.65),
+                9,
+            ), 3))
+            curve = run_curve(config_as_dict(config), lambda_grid, int(curve_runs))
         st.session_state["mc_result"] = {
-            "signature": experiment_signature,
+            "signature": mc_signature,
             "batch": batch,
             "curve": curve,
         }
-
     saved = st.session_state.get("mc_result")
     if saved is None:
-        st.info("Configura el experimento y pulsa **Ejecutar experimento Monte Carlo**. Esto evita recalcular cientos de partidas en cada cambio de la interfaz.")
-    elif saved["signature"] != experiment_signature:
-        st.warning("Los parámetros cambiaron desde el último experimento. Vuelve a ejecutar Monte Carlo para actualizar los resultados.")
+        st.info("Ejecuta el laboratorio para estimar la probabilidad y su intervalo de confianza.")
+    elif saved["signature"] != mc_signature:
+        st.warning("Los parámetros del experimento cambiaron. Ejecuta nuevamente.")
     else:
-        batch = saved["batch"]
-        curve = saved["curve"]
-        prob = float(batch["survived"].mean())
-
-        mc1, mc2, mc3, mc4 = st.columns(4)
-        mc1.metric("P̂(supervivencia)", f"{prob*100:.1f}%", border=True)
-        mc2.metric("Tiempo medio", f"{batch['survival_time'].mean():.1f} s", border=True)
-        mc3.metric("Enemigos medios", f"{batch['generated'].mean():.1f}", border=True)
-        mc4.metric("Pico medio", f"{batch['max_concurrent'].mean():.1f}", border=True)
-
-        l, r = st.columns([1, 1.6])
-        with l:
-            st.plotly_chart(monte_carlo_figure(batch), width="stretch", config={"displaylogo": False})
-        with r:
-            st.plotly_chart(survival_curve_figure(curve), width="stretch", config={"displaylogo": False})
-
+        batch, curve = saved["batch"], saved["curve"]
+        summary = summarize_batch(batch, config.arrival_model)
+        mc_metrics = st.columns(4)
+        mc_metrics[0].metric("P estimada", f"{float(summary['survival_probability'])*100:.1f} %")
+        mc_metrics[1].metric("IC 95 %", f"{float(summary['ci_low'])*100:.1f} - {float(summary['ci_high'])*100:.1f} %")
+        mc_metrics[2].metric("Tiempo medio", f"{float(summary['mean_survival_time']):.1f} s")
+        mc_metrics[3].metric("Llegadas medias", f"{float(summary['mean_generated']):.1f}")
+        left, right = st.columns([1, 1.6])
+        with left:
+            st.plotly_chart(monte_carlo_figure(batch), use_container_width=True, config={"displaylogo": False})
+        with right:
+            st.plotly_chart(survival_curve_figure(curve), use_container_width=True, config={"displaylogo": False})
         below = curve[curve["survival_probability"] < 0.5]
         if not below.empty:
-            critical_lambda = float(below.iloc[0]["lambda"])
+            critical_rate = float(below.iloc[0]["lambda"] * 60)
             st.warning(
-                f"En este barrido, la supervivencia cae por debajo de 50% aproximadamente a partir de λ ≈ {critical_lambda:.2f} enemigos/s."
+                f"En la cuadrícula evaluada, la primera tasa con supervivencia menor a 50 % es "
+                f"aproximadamente {critical_rate:.1f} llegadas/min. Es una aproximación Monte Carlo, no un valor exacto."
             )
-        else:
-            st.info("En el rango evaluado, la supervivencia se mantuvo por encima de 50%.")
-
-        with st.expander("Ver datos de las repeticiones"):
+        with st.expander("Ver datos de las partidas"):
             st.dataframe(batch, width="stretch", hide_index=True)
+
+
+with guide_tab:
+    section_header("Lectura académica", "Objetivo, variables, supuestos y alcance")
+    objective_col, variables_col = st.columns(2)
+    with objective_col:
+        st.markdown("### Objetivo general")
+        st.write(
+            "Modelar la aparición aleatoria de infectados y estimar la probabilidad de que "
+            "un protagonista sobreviva un horizonte temporal bajo reglas de combate controladas."
+        )
+        st.markdown("### Pregunta de investigación")
+        st.write(
+            "¿Cómo cambian la congestión y la supervivencia al variar la tasa y la forma "
+            "de los tiempos entre llegadas?"
+        )
+    with variables_col:
+        st.markdown("### Variables principales")
+        st.markdown(
+            """
+            - **Entrada:** tasa, duración, modelo, atributos de combate y semilla.
+            - **Estado:** HP del jugador, enemigos activos, posiciones y vida individual.
+            - **Aleatorias:** interarribos, ángulo, radio inicial, velocidad, HP y DPS enemigos.
+            - **Salida:** supervivencia, tiempo resistido, llegadas, bajas y concurrencia máxima.
+            """
+        )
+    st.markdown("### Supuestos")
+    st.markdown(
+        """
+        1. La tasa permanece constante dentro de cada partida.
+        2. El protagonista es estacionario y enfoca un objetivo a la vez.
+        3. Los infectados siguen trayectorias radiales sin colisiones ni obstáculos.
+        4. El daño se integra con paso fijo; reducir `dt` mejora precisión y aumenta costo.
+        5. Poisson supone incrementos independientes; Polar-lognormal es un proceso de renovación distinto.
+        6. La escena 3D representa el estado del modelo y no reemplaza un motor de videojuegos.
+        """
+    )
+    st.markdown("### Decisión tecnológica 3D")
+    st.write(
+        "Pygame es adecuado para un bucle interactivo 2D y puede actuar como capa de ventana para OpenGL, "
+        "pero no se integra naturalmente dentro del ciclo reactivo de Streamlit. Panda3D es la opción de "
+        "Python para una aplicación 3D independiente. Esta entrega utiliza mallas Plotly procedurales para "
+        "mantener controles, visualización y análisis estadístico en la misma aplicación web."
+    )
+    st.markdown("### Archivos de entrega")
+    st.markdown(
+        "- `README.md`: instalación, arquitectura, metodología y uso.\n"
+        "- `informe.tex`: informe académico compilable.\n"
+        "- `presentacion.html`: exposición navegable con teclado y controles.\n"
+        "- `tests/test_simulation.py`: verificaciones automáticas del motor."
+    )
+
 
 st.markdown("---")
 st.caption(
-    "OUTBREAK: POISSON SURVIVAL · Proyecto académico de Modelación y Simulación · "
-    "La vista 3D es una representación táctica del estado matemático del simulador, no un motor de videojuegos en tiempo real."
+    "OUTBREAK: STOCHASTIC SURVIVAL LAB | Proyecto académico de Modelación y Simulación | "
+    "Resultados reproducibles mediante semilla controlada"
 )

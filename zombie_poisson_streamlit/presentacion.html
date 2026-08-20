@@ -1,120 +1,231 @@
 <!doctype html>
 <html lang="es">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>OUTBREAK: Poisson Survival · Presentación</title>
-<script>
-window.MathJax = {tex: {inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$','$$']]}};
-</script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
-<style>
-:root{--bg:#060806;--panel:#0d1410;--panel2:#121b15;--line:#26342b;--text:#e6eee8;--muted:#93a79b;--lime:#b7ff5a;--red:#ff4d5f;--amber:#ffad4d}
-*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif;overflow:hidden}
-body:before{content:"";position:fixed;inset:0;background:radial-gradient(circle at 15% 0%,rgba(116,177,91,.14),transparent 35%),radial-gradient(circle at 90% 15%,rgba(130,30,35,.12),transparent 28%);pointer-events:none}
-.deck{height:100vh;width:100vw;position:relative}.slide{display:none;height:100vh;padding:6vh 7vw 8vh;position:absolute;inset:0;overflow:auto}.slide.active{display:block;animation:in .32s ease}@keyframes in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-.kicker{color:var(--lime);text-transform:uppercase;letter-spacing:.18em;font-weight:800;font-size:.8rem}.title{font-size:clamp(3rem,7vw,7.2rem);line-height:.88;letter-spacing:-.06em;margin:1rem 0}.subtitle{font-size:clamp(1.1rem,2vw,1.7rem);max-width:950px;color:var(--muted);line-height:1.5}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:2rem}.grid3{grid-template-columns:repeat(3,minmax(0,1fr))}.card{background:linear-gradient(180deg,rgba(16,24,18,.96),rgba(10,15,12,.96));border:1px solid var(--line);border-radius:20px;padding:22px;box-shadow:0 20px 70px rgba(0,0,0,.2)}.card h3{margin:.2rem 0 .65rem}.muted{color:var(--muted)}.formula{font-size:clamp(1.15rem,2.1vw,2rem);background:#0b110d;border:1px solid #2f4035;border-left:4px solid var(--lime);border-radius:14px;padding:15px 20px;margin:1rem 0}.flow{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin:2rem 0}.node{border:1px solid #35483b;background:#101812;padding:13px 17px;border-radius:13px;font-weight:700}.arrow{color:var(--lime);font-size:1.5rem}.danger{color:var(--red)}.accent{color:var(--lime)}.big{font-size:clamp(2rem,5vw,4.5rem);font-weight:850;letter-spacing:-.045em}.bars{display:flex;height:220px;align-items:end;gap:14px;border-bottom:1px solid var(--line);padding:0 8px}.bar{flex:1;background:linear-gradient(180deg,var(--red),#5a1c24);border-radius:8px 8px 0 0;min-width:28px;position:relative}.bar span{position:absolute;bottom:-2rem;width:100%;text-align:center;color:var(--muted);font-size:.8rem}.nav{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);display:flex;gap:10px;z-index:10}.nav button{background:#101812;color:var(--text);border:1px solid var(--line);border-radius:999px;padding:10px 15px;cursor:pointer}.nav button:hover{border-color:var(--lime)}.counter{position:fixed;right:26px;bottom:29px;color:var(--muted);font-size:.8rem}.hint{position:fixed;left:26px;bottom:29px;color:#65756b;font-size:.75rem}.mock{border:1px solid #2c3b32;border-radius:20px;background:#0a0f0c;padding:18px}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.metric{padding:15px;border:1px solid var(--line);border-radius:14px;background:#101712}.metric b{display:block;font-size:1.65rem}.metric small{color:var(--muted)} ul{line-height:1.75} h2{font-size:clamp(2.2rem,5vw,4.8rem);letter-spacing:-.045em;margin:.5rem 0 1.2rem}@media(max-width:800px){.grid,.grid3,.metrics{grid-template-columns:1fr}.slide{padding:5vh 5vw 12vh}}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Outbreak: Stochastic Survival Lab | Presentación</title>
+  <script>
+    window.MathJax={tex:{inlineMath:[['$','$'],['\\(','\\)']]},svg:{fontCache:'global'}};
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+  <style>
+    :root{--bg:#070908;--panel:#101612;--panel2:#151d18;--line:#303e35;--text:#edf3ee;--muted:#97a79e;--lime:#c7ff73;--green:#95df6a;--red:#ff606b;--amber:#f3a64f;--blue:#68b8d8}
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:Inter,"Segoe UI",Arial,sans-serif}.deck{width:100%;height:100%}.slide{display:none;position:absolute;inset:0;padding:6vh 7vw 10vh;background:radial-gradient(circle at 15% 0,rgba(119,159,81,.13),transparent 33%),radial-gradient(circle at 95% 15%,rgba(153,42,51,.1),transparent 28%),linear-gradient(160deg,#070908,#0a0e0b);overflow:auto}.slide.active{display:flex;flex-direction:column;justify-content:center;animation:enter .35s ease-out}@keyframes enter{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
+    .slide.hero{background:linear-gradient(90deg,rgba(4,6,5,.97) 0%,rgba(4,6,5,.78) 45%,rgba(4,6,5,.22) 75%),url('assets/outbreak-command-center.png') center/cover no-repeat}.hero-copy{max-width:760px}.kicker{color:var(--lime);text-transform:uppercase;letter-spacing:.2em;font-weight:850;font-size:.76rem}.display{font-size:clamp(3.5rem,7.5vw,8rem);line-height:.84;letter-spacing:-.065em;margin:.8rem 0 1.2rem}.display span{color:var(--lime)}h2{font-size:clamp(2.3rem,5vw,5.2rem);line-height:.95;letter-spacing:-.05em;margin:.45rem 0 1.2rem}h3{margin:.1rem 0 .55rem;font-size:1.15rem}.lead{font-size:clamp(1.05rem,1.7vw,1.5rem);line-height:1.55;color:var(--muted);max-width:1060px}.accent{color:var(--lime)}.danger{color:var(--red)}.blue{color:var(--blue)}.amber{color:var(--amber)}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:1.3rem}.grid3{grid-template-columns:repeat(3,minmax(0,1fr))}.grid4{grid-template-columns:repeat(4,minmax(0,1fr))}.card{background:linear-gradient(180deg,rgba(18,25,20,.96),rgba(11,16,13,.96));border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:0 18px 55px rgba(0,0,0,.2)}.card p,.card li{color:var(--muted);line-height:1.55}.card ul{padding-left:1.2rem;margin:.55rem 0}.formula{background:#0b110d;border:1px solid #33443a;border-left:4px solid var(--lime);border-radius:13px;padding:13px 18px;margin:.8rem 0;font-size:clamp(1rem,1.8vw,1.55rem);text-align:center}.formula.blue-line{border-left-color:var(--blue)}.formula.amber-line{border-left-color:var(--amber)}
+    .flow{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;margin:1.2rem 0}.node{background:#111914;border:1px solid #3a4c40;border-radius:12px;padding:12px 16px;font-weight:750}.arrow{color:var(--lime);font-size:1.45rem}.metric{background:#101712;border:1px solid var(--line);border-radius:14px;padding:15px}.metric small{color:var(--muted);text-transform:uppercase;letter-spacing:.11em;font-size:.66rem}.metric b{display:block;font-size:clamp(1.55rem,3vw,3rem);margin-top:.3rem}.tag{display:inline-block;border:1px solid #435448;border-radius:999px;padding:.28rem .62rem;margin:.25rem .28rem .1rem 0;color:#c5d0ca;font-size:.72rem}.split-image{display:grid;grid-template-columns:1.05fr 1fr;gap:26px;align-items:center}.image-frame{border:1px solid var(--line);border-radius:20px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.35)}.image-frame img{display:block;width:100%;height:auto}.table{width:100%;border-collapse:collapse;margin-top:1rem;font-size:.94rem}.table th{text-align:left;color:var(--lime);font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;border-bottom:1px solid #536358;padding:10px}.table td{padding:10px;border-bottom:1px solid #26312a;color:#c5d1ca}.bars{height:260px;display:flex;align-items:end;gap:24px;border-bottom:1px solid #465249;padding:0 8%;margin:1rem 0 2.5rem}.bar{flex:1;position:relative;border-radius:10px 10px 0 0;background:linear-gradient(180deg,var(--lime),#4b6d32)}.bar.polar{background:linear-gradient(180deg,var(--blue),#315a6b)}.bar span{position:absolute;top:-2rem;width:100%;text-align:center;font-weight:850}.bar label{position:absolute;bottom:-2rem;width:100%;text-align:center;color:var(--muted)}.ci{position:absolute;left:50%;transform:translateX(-50%);width:2px;background:white;opacity:.75}.ci:before,.ci:after{content:"";position:absolute;left:-7px;width:14px;height:2px;background:white}.ci:before{top:0}.ci:after{bottom:0}.architecture{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-items:stretch}.layer{padding:18px;border-radius:15px;border:1px solid var(--line);background:#111813;text-align:center}.layer strong{display:block;color:var(--lime);margin-bottom:.5rem}.layer code{color:#c6d1ca}.callout{padding:14px 17px;border:1px solid var(--line);border-left:4px solid var(--amber);border-radius:13px;background:#0e1410;color:#c8d4cc;margin:1rem 0}.small{font-size:.82rem;color:var(--muted)}
+    .controls{position:fixed;z-index:20;bottom:20px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:rgba(8,11,9,.86);padding:8px;border:1px solid var(--line);border-radius:999px;backdrop-filter:blur(12px)}.controls button{border:1px solid #46584b;background:#111914;color:var(--text);border-radius:999px;padding:9px 14px;cursor:pointer;font-weight:750}.controls button:hover{border-color:var(--lime);color:var(--lime)}.counter{min-width:70px;text-align:center;color:var(--muted);font-size:.78rem}.progress{position:fixed;z-index:21;top:0;left:0;height:4px;background:var(--lime);transition:width .3s}.brand{position:fixed;z-index:20;top:20px;right:26px;color:#6f7e75;font-size:.68rem;letter-spacing:.16em;text-transform:uppercase}.hint{position:fixed;z-index:20;bottom:27px;left:25px;color:#657269;font-size:.7rem}.overview{display:none;position:fixed;z-index:40;inset:0;background:rgba(3,5,4,.96);padding:5vh 5vw;overflow:auto}.overview.show{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;align-content:start}.thumb{border:1px solid var(--line);border-radius:13px;padding:15px;background:#0f1511;cursor:pointer;min-height:115px}.thumb:hover{border-color:var(--lime)}.thumb small{color:var(--lime)}.thumb strong{display:block;margin-top:.45rem}
+    @media(max-width:900px){.grid,.grid3,.grid4,.split-image,.architecture{grid-template-columns:1fr}.slide{padding:7vh 5vw 13vh}.slide.active{justify-content:flex-start}.overview.show{grid-template-columns:repeat(2,1fr)}.hint,.brand{display:none}.bars{height:200px}}
+  </style>
 </head>
 <body>
-<div class="deck">
-  <section class="slide active">
-    <div class="kicker">Modelación y Simulación · Variables Aleatorias Continuas</div>
-    <div class="title">OUTBREAK:<br><span class="accent">POISSON SURVIVAL</span></div>
-    <p class="subtitle">Modelación de oleadas de infectados en un videojuego de supervivencia mediante un Proceso de Poisson, implementado en Python + Streamlit con visualización táctica 3D y análisis Monte Carlo.</p>
-    <div class="grid grid3">
-      <div class="card"><h3>🎮 Problema</h3><p class="muted">¿Cómo hacer que las oleadas aparezcan de forma aleatoria y matemáticamente justificable?</p></div>
-      <div class="card"><h3>λ Variable clave</h3><p class="muted">Tasa promedio de llegadas de enemigos por segundo.</p></div>
-      <div class="card"><h3>🧪 Experimento</h3><p class="muted">Relacionar λ con la probabilidad de supervivencia del jugador.</p></div>
+<div class="progress" id="progress"></div>
+<div class="brand">Modelación y Simulación</div>
+<main class="deck">
+  <section class="slide hero active" data-title="Portada">
+    <div class="hero-copy">
+      <div class="kicker">Proyecto de variables aleatorias continuas</div>
+      <div class="display">OUTBREAK:<br><span>STOCHASTIC</span><br>SURVIVAL</div>
+      <p class="lead">Proceso de Poisson, método polar, combate discreto, inferencia Monte Carlo y visualización tridimensional en una sola experiencia reproducible.</p>
+      <div><span class="tag">Python</span><span class="tag">Streamlit</span><span class="tag">Plotly 3D</span><span class="tag">Monte Carlo</span></div>
     </div>
   </section>
 
-  <section class="slide">
-    <div class="kicker">Planteamiento</div><h2>De una oleada fija a un proceso aleatorio</h2>
+  <section class="slide" data-title="Problema y pregunta">
+    <div class="kicker">Punto de partida</div><h2>De una oleada fija a un sistema aleatorio</h2>
+    <p class="lead">Una aparición cada dos segundos es predecible. En una crisis conocemos una intensidad aproximada, pero no el instante exacto del siguiente evento.</p>
     <div class="grid">
-      <div class="card"><h3 class="danger">Modelo determinístico</h3><div class="formula">“Crear un enemigo cada 2 segundos”</div><p class="muted">Es predecible. Los intervalos son idénticos y no representan la variabilidad de un proceso aleatorio.</p></div>
-      <div class="card"><h3 class="accent">Modelo estocástico</h3><div class="formula">$\Delta_1,\Delta_2,\ldots \sim \operatorname{Exp}(\lambda)$</div><p class="muted">Cada intervalo entre apariciones es una variable aleatoria continua.</p></div>
+      <div class="card"><h3 class="danger">Modelo determinista</h3><div class="formula">2.0, 4.0, 6.0, 8.0, ...</div><p>Intervalos idénticos. No hay rachas, pausas ni variabilidad.</p></div>
+      <div class="card"><h3 class="accent">Modelo estocástico</h3><div class="formula">$\Delta_1,\Delta_2,\ldots$ aleatorios</div><p>Cada interarribo es una variable continua que modifica la presión de combate.</p></div>
     </div>
-    <div class="flow"><div class="node">0 s</div><div class="arrow">→</div><div class="node">🧟 1.4 s</div><div class="arrow">→</div><div class="node">🧟 2.1 s</div><div class="arrow">→</div><div class="node">🧟 5.8 s</div><div class="arrow">→</div><div class="node">…</div></div>
+    <div class="callout"><strong>Pregunta:</strong> ¿cómo cambian la congestión y la supervivencia cuando varían la tasa y la forma de los interarribos?</div>
   </section>
 
-  <section class="slide">
-    <div class="kicker">Modelo probabilístico</div><h2>Proceso de Poisson homogéneo</h2>
-    <p class="subtitle">Sea $N(t)$ el número de enemigos que han aparecido hasta el instante $t$.</p>
-    <div class="formula">$$N(t)\sim\operatorname{Poisson}(\lambda t)$$</div>
-    <div class="formula">$$P\{N(t)=k\}=e^{-\lambda t}\frac{(\lambda t)^k}{k!}$$</div>
+  <section class="slide" data-title="Objetivos">
+    <div class="kicker">Dirección del estudio</div><h2>Objetivos y productos</h2>
     <div class="grid grid3">
-      <div class="card"><h3>Esperanza</h3><div class="big accent">$\lambda t$</div><p class="muted">Número esperado de enemigos.</p></div>
-      <div class="card"><h3>Varianza</h3><div class="big accent">$\lambda t$</div><p class="muted">Variabilidad del conteo.</p></div>
-      <div class="card"><h3>Interpretación</h3><p>Si $\lambda=0.7$ enemigos/s, se esperan en promedio $42$ enemigos por minuto.</p></div>
+      <div class="card"><h3>Modelar</h3><p>Traducir llegadas aleatorias a instantes de aparición matemáticamente justificables.</p></div>
+      <div class="card"><h3>Comparar</h3><p>Contrastar Poisson con una renovación Polar-lognormal bajo la misma tasa media.</p></div>
+      <div class="card"><h3>Estimar</h3><p>Calcular probabilidad de supervivencia e intervalos de confianza mediante Monte Carlo.</p></div>
+      <div class="card"><h3>Visualizar</h3><p>Representar arena, posiciones, alcance, peligro y telemetría en una escena 3D.</p></div>
+      <div class="card"><h3>Verificar</h3><p>Probar propiedades estadísticas, reproducibilidad y coherencia de eventos.</p></div>
+      <div class="card"><h3>Comunicar</h3><p>Entregar aplicación, código documentado, README, informe y presentación.</p></div>
     </div>
   </section>
 
-  <section class="slide">
-    <div class="kicker">Variable aleatoria continua</div><h2>Tiempo entre llegadas</h2>
-    <p class="subtitle">En un Proceso de Poisson homogéneo, los interarribos son Exponenciales independientes.</p>
-    <div class="formula">$$\Delta_i\sim\operatorname{Exp}(\lambda),\qquad f_\Delta(x)=\lambda e^{-\lambda x}$$</div>
-    <div class="formula">$$F_\Delta(x)=1-e^{-\lambda x},\qquad \mathbb{E}[\Delta]=\frac{1}{\lambda}$$</div>
-    <div class="card"><h3>Conexión con el juego</h3><p class="muted">$\Delta_i$ responde una pregunta concreta: <b>¿cuántos segundos faltan para que aparezca el siguiente infectado?</b></p></div>
+  <section class="slide" data-title="Flujo del sistema">
+    <div class="kicker">Modelo conceptual</div><h2>Una cadena causal completa</h2>
+    <div class="flow"><div class="node">Uniformes</div><div class="arrow">→</div><div class="node">Interarribos</div><div class="arrow">→</div><div class="node">Llegadas $t_i$</div><div class="arrow">→</div><div class="node">Movimiento</div><div class="arrow">→</div><div class="node">Combate</div><div class="arrow">→</div><div class="node">Supervivencia</div></div>
+    <div class="grid grid4">
+      <div class="metric"><small>Entrada</small><b>$\lambda$</b><span class="small">intensidad media</span></div>
+      <div class="metric"><small>Variable continua</small><b>$\Delta_i$</b><span class="small">tiempo entre llegadas</span></div>
+      <div class="metric"><small>Estado</small><b>$HP(t)$</b><span class="small">vida del protagonista</span></div>
+      <div class="metric"><small>Salida</small><b>$I$</b><span class="small">1 si sobrevive, 0 si cae</span></div>
+    </div>
   </section>
 
-  <section class="slide">
-    <div class="kicker">Método visto en clase</div><h2>Transformada inversa</h2>
-    <div class="flow"><div class="node">$U_i\sim U(0,1)$</div><div class="arrow">→</div><div class="node">$\Delta_i=-\ln(U_i)/\lambda$</div><div class="arrow">→</div><div class="node">$t_i=t_{i-1}+\Delta_i$</div><div class="arrow">→</div><div class="node">🧟 Spawn</div></div>
-    <div class="formula">$$\boxed{\Delta_i=-\frac{\ln(U_i)}{\lambda}}$$</div>
+  <section class="slide" data-title="Proceso de Poisson">
+    <div class="kicker">Modelo principal</div><h2>Proceso de Poisson homogéneo</h2>
+    <p class="lead">$N(t)$ cuenta cuántos infectados han aparecido hasta el instante $t$ con tasa constante $\lambda$.</p>
     <div class="grid">
-      <div class="card"><h3>Ejemplo</h3><p>Si $\lambda=0.7$ y $U=0.35$:</p><div class="formula">$$\Delta=-\frac{\ln(0.35)}{0.7}\approx1.50\;s$$</div></div>
-      <div class="card"><h3>Acumulación</h3><p class="muted">El nuevo instante de aparición no reemplaza al anterior; se suma al tiempo acumulado.</p><div class="formula">$$t_i=t_{i-1}+\Delta_i$$</div></div>
+      <div><div class="formula">$$N(t)\sim\operatorname{Poisson}(\lambda t)$$</div><div class="formula">$$P\{N(t)=k\}=e^{-\lambda t}\frac{(\lambda t)^k}{k!}$$</div></div>
+      <div class="grid">
+        <div class="metric"><small>Esperanza</small><b>$\lambda t$</b></div>
+        <div class="metric"><small>Varianza</small><b>$\lambda t$</b></div>
+        <div class="metric"><small>CV interarribo</small><b>1</b></div>
+        <div class="metric"><small>Propiedad</small><b>Sin memoria</b></div>
+      </div>
     </div>
+    <div class="callout"><strong>Interpretación base:</strong> 39 llegadas/min equivalen a $\lambda=0.65$ s$^{-1}$ y a un interarribo medio de 1.538 s.</div>
   </section>
 
-  <section class="slide">
-    <div class="kicker">Simulador</div><h2>Reglas del videojuego</h2>
-    <div class="grid grid3">
-      <div class="card"><h3>🧍 Jugador</h3><ul><li>Permanece en el centro.</li><li>Ataca al enemigo más cercano.</li><li>Tiene HP, DPS y alcance configurables.</li></ul></div>
-      <div class="card"><h3>🧟 Infectados</h3><ul><li>Aparecen según $t_i$.</li><li>Nacen en el perímetro.</li><li>Avanzan hacia el jugador.</li><li>Al contactar, infligen daño.</li></ul></div>
-      <div class="card"><h3>🏁 Terminación</h3><ul><li>Victoria: se alcanza $T$ con HP &gt; 0.</li><li>Derrota: HP = 0.</li><li>Se registran telemetría y eventos.</li></ul></div>
-    </div>
+  <section class="slide" data-title="Transformada inversa">
+    <div class="kicker">Variable aleatoria continua</div><h2>De uniforme a exponencial</h2>
+    <p class="lead">La función acumulada exponencial se invierte para transformar números uniformes en segundos de espera.</p>
+    <div class="formula">$$F_\Delta(x)=1-e^{-\lambda x}$$</div>
+    <div class="flow"><div class="node">$U=1-e^{-\lambda x}$</div><div class="arrow">→</div><div class="node">$e^{-\lambda x}=1-U$</div><div class="arrow">→</div><div class="node">$x=-\ln(1-U)/\lambda$</div></div>
+    <div class="formula">$$\boxed{\Delta_i=-\frac{\ln(U_i)}{\lambda}},\qquad U_i\sim U(0,1)$$</div>
+    <div class="grid"><div class="card"><h3>Ejemplo</h3><p>Con $\lambda=0.65$ y $U=0.35$:</p><div class="formula">$\Delta\approx1.615$ s</div></div><div class="card"><h3>Acumulación</h3><p>El tiempo de aparición es la suma de esperas:</p><div class="formula">$t_i=t_{i-1}+\Delta_i$</div></div></div>
   </section>
 
-  <section class="slide">
-    <div class="kicker">Interfaz</div><h2>Dashboard Streamlit + vista 3D</h2>
-    <div class="mock">
-      <div class="metrics"><div class="metric"><small>Estado</small><b>SOBREVIVE</b></div><div class="metric"><small>HP final</small><b>34.8</b></div><div class="metric"><small>Generados</small><b>64</b></div><div class="metric"><small>Pico activos</small><b>11</b></div></div>
-      <div class="grid" style="margin-top:14px"><div class="card" style="min-height:260px"><div class="kicker">Arena táctica 3D</div><p class="muted">Jugador en el centro, infectados acercándose, ruinas, perímetro, alcance de arma y zona de contacto.</p><div class="big" style="text-align:center;margin-top:45px">🧟　🧟<br>　　<span class="accent">◆</span>　🧟<br>🧟</div></div><div class="card"><div class="kicker">Control</div><ul><li>Preset de dificultad</li><li>λ</li><li>Duración</li><li>HP / DPS / alcance</li><li>Estadísticas de los enemigos</li><li>Semilla reproducible</li></ul></div></div>
-    </div>
-  </section>
-
-  <section class="slide">
-    <div class="kicker">Experimento</div><h2>Monte Carlo: dificultad emergente</h2>
-    <p class="subtitle">Una partida es solo una realización aleatoria. Repetimos muchas partidas para estimar $P(\text{sobrevivir})$.</p>
-    <div class="formula">$$\widehat P(\text{sobrevivir})=\frac{\text{partidas sobrevividas}}{\text{partidas simuladas}}$$</div>
-    <div class="bars"><div class="bar" style="height:92%"><span>λ=.25</span></div><div class="bar" style="height:82%"><span>λ=.50</span></div><div class="bar" style="height:66%"><span>λ=.75</span></div><div class="bar" style="height:45%"><span>λ=1.0</span></div><div class="bar" style="height:21%"><span>λ=1.25</span></div><div class="bar" style="height:8%"><span>λ=1.5</span></div></div>
-    <p class="muted" style="margin-top:3rem">Los valores de la demostración real se calculan en Streamlit; esta diapositiva muestra únicamente la relación esperada para explicar el experimento.</p>
-  </section>
-
-  <section class="slide">
-    <div class="kicker">Interpretación</div><h2>¿Qué buscamos descubrir?</h2>
+  <section class="slide" data-title="Método polar">
+    <div class="kicker">Modelo de contraste</div><h2>Marsaglia Polar genera normales</h2>
     <div class="grid">
-      <div class="card"><h3 class="accent">Pregunta central</h3><p class="big">¿Cómo cambia la supervivencia cuando aumenta $\lambda$?</p></div>
-      <div class="card"><h3>Umbral crítico</h3><p class="subtitle">Buscamos un valor aproximado $\lambda_{crit}$ a partir del cual la probabilidad de sobrevivir cae por debajo del 50%.</p><div class="formula">$$P(\text{sobrevivir}\mid\lambda_{crit})\approx0.5$$</div></div>
+      <div><div class="formula blue-line">$$V_1,V_2\sim U(-1,1),\qquad S=V_1^2+V_2^2$$</div><div class="formula blue-line">$$0&lt;S&lt;1:\quad Z=V_1\sqrt{\frac{-2\ln S}{S}}\sim N(0,1)$$</div></div>
+      <div class="card"><h3 class="blue">Aclaración conceptual</h3><p>Polar no es una distribución de llegadas ni un proceso de conteo. Es un algoritmo para producir normales a partir de uniformes.</p><p>Los pares fuera del círculo unitario se rechazan y cada par aceptado entrega dos normales.</p></div>
+    </div>
+    <div class="callout"><strong>Problema:</strong> una normal puede ser negativa y, por tanto, no puede representar directamente segundos de espera.</div>
+  </section>
+
+  <section class="slide" data-title="Polar-lognormal">
+    <div class="kicker">Tiempos siempre positivos</div><h2>Proceso de renovación lognormal</h2>
+    <p class="lead">Transformamos la normal generada por Polar para construir interarribos positivos con la misma media que Poisson.</p>
+    <div class="formula blue-line">$$\Delta_i=e^{\mu+\sigma Z_i}$$</div>
+    <div class="grid">
+      <div class="card"><h3>Media compartida</h3><div class="formula">$$\mathbb E[\Delta]=\frac{1}{\lambda}$$</div><p>La frecuencia promedio es comparable.</p></div>
+      <div class="card"><h3>Variabilidad controlada</h3><div class="formula blue-line">$$\sigma^2=\ln(1+CV^2)$$</div><p>El escenario base usa $CV=0.45$.</p></div>
+    </div>
+    <div class="formula">$$\mu=\ln(1/\lambda)-\frac{\sigma^2}{2}$$</div>
+  </section>
+
+  <section class="slide" data-title="Comparación justa">
+    <div class="kicker">Diseño del contraste</div><h2>Misma media, distinta estructura temporal</h2>
+    <table class="table"><thead><tr><th>Característica</th><th>Poisson</th><th>Polar-lognormal</th></tr></thead><tbody>
+      <tr><td>Interarribo</td><td>Exponencial</td><td>Lognormal</td></tr><tr><td>Media</td><td>$1/\lambda$</td><td>$1/\lambda$</td></tr><tr><td>CV base</td><td>1</td><td>0.45</td></tr><tr><td>Memoria</td><td>Sin memoria</td><td>Depende del tiempo transcurrido</td></tr><tr><td>Conteo</td><td>Poisson exacto</td><td>Renovación, no Poisson</td></tr><tr><td>Patrón esperado</td><td>Rachas y pausas</td><td>Llegadas más regulares</td></tr>
+    </tbody></table>
+    <div class="callout"><strong>Criterio:</strong> Poisson es el modelo principal por interpretación y parsimonia cuando son razonables la tasa constante y la independencia; no porque garantice un resultado de juego específico.</div>
+  </section>
+
+  <section class="slide" data-title="Arena y combate">
+    <div class="kicker">Representación del sistema</div><h2>Del calendario al escenario</h2>
+    <div class="split-image">
+      <div class="image-frame"><img src="assets/outbreak-tactical-model.png" alt="Modelo cenital de la arena de supervivencia"></div>
+      <div>
+        <div class="card"><h3>Protagonista</h3><ul><li>Permanece en el centro.</li><li>Ataca un objetivo a la vez.</li><li>Prioriza al enemigo más cercano dentro del alcance.</li></ul></div>
+        <div class="card" style="margin-top:12px"><h3>Infectados</h3><ul><li>Aparecen en $t_i$ cerca del perímetro.</li><li>Avanzan radialmente.</li><li>Suman daño al entrar en contacto.</li></ul></div>
+      </div>
     </div>
   </section>
 
-  <section class="slide">
-    <div class="kicker">Cierre</div><h2>Conclusiones esperadas</h2>
-    <div class="grid grid3">
-      <div class="card"><h3>1 · Matemática</h3><p class="muted">El Proceso de Poisson proporciona una base probabilística clara para modelar apariciones aleatorias.</p></div>
-      <div class="card"><h3>2 · Simulación</h3><p class="muted">La transformada inversa convierte uniformes en tiempos Exponenciales y estos tiempos alimentan directamente el juego.</p></div>
-      <div class="card"><h3>3 · Diseño</h3><p class="muted">λ funciona como un parámetro interpretable de dificultad: modifica la presión de la oleada sin programar intervalos fijos.</p></div>
-    </div>
-    <div class="formula" style="margin-top:2rem">$$\lambda\uparrow\quad\Longrightarrow\quad\text{más presión de enemigos}\quad\Longrightarrow\quad P(\text{supervivencia})\downarrow$$</div>
-    <p class="subtitle">Demo: ejecutar <b>streamlit run app.py</b> y mostrar la arena 3D, la tabla $U_i,\Delta_i,t_i$ y el experimento Monte Carlo.</p>
+  <section class="slide" data-title="Parámetros">
+    <div class="kicker">Escenario base</div><h2>Parámetros con unidades claras</h2>
+    <table class="table"><thead><tr><th>Grupo</th><th>Parámetro</th><th>Valor</th><th>Unidad</th></tr></thead><tbody>
+      <tr><td>Llegadas</td><td>Tasa</td><td>39</td><td>llegadas/min</td></tr><tr><td>Misión</td><td>Horizonte</td><td>90</td><td>s</td></tr><tr><td>Polar</td><td>Coeficiente de variación</td><td>0.45</td><td>adimensional</td></tr><tr><td>Protagonista</td><td>HP / DPS / alcance</td><td>110 / 42 / 10</td><td>HP / HP s$^{-1}$ / m</td></tr><tr><td>Infectado</td><td>HP / velocidad / DPS</td><td>42 / 1.55 / 9</td><td>HP / m s$^{-1}$ / HP s$^{-1}$</td></tr><tr><td>Numérico</td><td>Paso temporal</td><td>0.05</td><td>s</td></tr>
+    </tbody></table>
+    <div class="grid grid3"><div class="card"><h3>Validación</h3><p>Positividad y relaciones entre radios.</p></div><div class="card"><h3>Reproducibilidad</h3><p>Semilla controlada y flujos aleatorios separados.</p></div><div class="card"><h3>Precisión</h3><p>El usuario puede reducir $dt$ y observar el costo.</p></div></div>
   </section>
-</div>
-<div class="nav"><button onclick="prev()">← Anterior</button><button onclick="next()">Siguiente →</button></div><div class="counter" id="counter"></div><div class="hint">← → para navegar · F11 para pantalla completa</div>
+
+  <section class="slide" data-title="Arquitectura">
+    <div class="kicker">Implementación</div><h2>Arquitectura separada por responsabilidades</h2>
+    <div class="architecture"><div class="layer"><strong>Motor</strong><code>simulation.py</code><p class="small">Llegadas, combate, Monte Carlo, Wilson.</p></div><div class="layer"><strong>Visuales</strong><code>visuals.py</code><p class="small">Mallas 3D y gráficas estadísticas.</p></div><div class="layer"><strong>Interfaz</strong><code>app.py</code><p class="small">Formulario, estado, caché y narrativa.</p></div></div>
+    <div class="flow"><div class="node">Configuración validada</div><div class="arrow">→</div><div class="node">Semillas separadas</div><div class="arrow">→</div><div class="node">Lista activa</div><div class="arrow">→</div><div class="node">Resultado inmutable para visuales</div></div>
+    <div class="grid"><div class="card"><h3>Corrección importante</h3><p>El calendario completo y las llegadas ocurridas antes de una derrota se guardan por separado.</p></div><div class="card"><h3>Eficiencia</h3><p>El bucle recorre enemigos activos; no revisa todo el calendario en cada paso.</p></div></div>
+  </section>
+
+  <section class="slide" data-title="Decisión 3D">
+    <div class="kicker">Tecnología de visualización</div><h2>Por qué Plotly y no Pygame</h2>
+    <div class="grid grid3">
+      <div class="card"><h3>Pygame</h3><p>Excelente para superficies 2D, entrada y bucle de escritorio. El 3D exige OpenGL adicional y abre otra ventana.</p><span class="tag">No integrado</span></div>
+      <div class="card"><h3 class="accent">Plotly Mesh3d</h3><p>Mallas triangulares interactivas dentro de Streamlit. Mantiene controles, escena y estadística en la misma página.</p><span class="tag">Elección actual</span></div>
+      <div class="card"><h3>Panda3D</h3><p>Motor 3D real con escena, animación y renderizado. Adecuado para una futura aplicación independiente.</p><span class="tag">Trabajo futuro</span></div>
+    </div>
+    <div class="callout"><strong>Resultado:</strong> personajes de bajo poligonaje, edificios, vehículos, barricadas, terreno y anillos tácticos, combinados en pocas mallas para conservar fluidez.</div>
+  </section>
+
+  <section class="slide" data-title="Experimento Monte Carlo">
+    <div class="kicker">De una partida a una estimación</div><h2>Monte Carlo con incertidumbre</h2>
+    <p class="lead">Una partida es una realización. Repetir $R$ veces permite estimar una proporción de supervivencia.</p>
+    <div class="formula">$$\widehat p=\frac{1}{R}\sum_{r=1}^{R}I_r,\qquad I_r\in\{0,1\}$$</div>
+    <div class="grid grid3"><div class="card"><h3>Semillas independientes</h3><p>Cada corrida recibe una semilla derivada de una maestra.</p></div><div class="card"><h3>Comparación pareada</h3><p>Poisson y Polar usan el mismo vector de semillas.</p></div><div class="card"><h3>Intervalo de Wilson</h3><p>El IC al 95 % muestra la precisión, incluso cerca de 0 o 1.</p></div></div>
+    <div class="callout"><strong>Regla de lectura:</strong> no declarar diferencias concluyentes observando solo dos porcentajes; revisar amplitud y superposición de intervalos.</div>
+  </section>
+
+  <section class="slide" data-title="Resultados">
+    <div class="kicker">Escenario base, 400 partidas por modelo</div><h2>Resultados reproducibles de referencia</h2>
+    <div class="grid">
+      <div><div class="bars"><div class="bar" style="height:96.5%"><span>96.5 %</span><label>Poisson</label><i class="ci" style="height:3.7%;top:-1%"></i></div><div class="bar polar" style="height:100%"><span>100 %</span><label>Polar-lognormal</label><i class="ci" style="height:1%;top:0"></i></div></div></div>
+      <div><table class="table"><thead><tr><th>Métrica</th><th>Poisson</th><th>Polar</th></tr></thead><tbody><tr><td>IC 95 %</td><td>[94.2, 97.9] %</td><td>[99.0, 100] %</td></tr><tr><td>Tiempo medio</td><td>88.526 s</td><td>90.000 s</td></tr><tr><td>Llegadas medias</td><td>57.133</td><td>57.778</td></tr><tr><td>Pico activo medio</td><td>9.483</td><td>6.483</td></tr></tbody></table></div>
+    </div>
+    <div class="callout"><strong>Hallazgo:</strong> con tasa media semejante, Poisson generó mayor concurrencia debido a rachas cortas. La forma de la distribución importa.</div>
+  </section>
+
+  <section class="slide" data-title="Interpretación">
+    <div class="kicker">Qué significa el resultado</div><h2>Poisson sigue siendo el modelo principal</h2>
+    <div class="grid">
+      <div class="card"><h3 class="accent">Razones a favor</h3><ul><li>Un solo parámetro interpretable.</li><li>Correspondencia exacta entre conteo e interarribos.</li><li>Incrementos independientes.</li><li>Validación directa: media = varianza.</li><li>Adecuado cuando no existe memoria.</li></ul></div>
+      <div class="card"><h3 class="blue">Lo que aporta Polar</h3><ul><li>Control explícito de variabilidad.</li><li>Contraste contra llegadas regulares.</li><li>Demuestra que la media no describe todo.</li><li>Permite discutir adecuación del modelo.</li><li>No reemplaza automáticamente a Poisson.</li></ul></div>
+    </div>
+    <div class="formula amber-line">Mejor modelo $\neq$ mayor supervivencia<br><span class="small">Mejor modelo = supuestos más coherentes con el fenómeno y los datos</span></div>
+  </section>
+
+  <section class="slide" data-title="Verificación">
+    <div class="kicker">Calidad del desarrollo</div><h2>Nueve pruebas automáticas</h2>
+    <div class="grid grid3">
+      <div class="card"><h3>Propiedad Poisson</h3><p>Media y varianza cercanas a $\lambda T$.</p></div><div class="card"><h3>Media Polar</h3><p>Interarribo positivo y cercano a $1/\lambda$.</p></div><div class="card"><h3>Reproducibilidad</h3><p>Igual semilla, igual trayectoria.</p></div><div class="card"><h3>Coherencia temporal</h3><p>No se cuentan llegadas posteriores a la derrota.</p></div><div class="card"><h3>Comparación pareada</h3><p>Mismas semillas para ambos modelos.</p></div><div class="card"><h3>Precisión numérica</h3><p>Resultado estable al reducir $dt$.</p></div>
+    </div>
+    <div class="formula">$\texttt{python -m unittest discover -s tests -v}$</div>
+  </section>
+
+  <section class="slide" data-title="Supuestos y límites">
+    <div class="kicker">Lectura responsable</div><h2>Supuestos y limitaciones</h2>
+    <div class="grid grid3"><div class="card"><h3>Tasa constante</h3><p>No representa oleadas con intensidad variable dentro de una partida.</p></div><div class="card"><h3>Movimiento radial</h3><p>No hay colisiones ni evitación de obstáculos.</p></div><div class="card"><h3>Jugador estacionario</h3><p>No se modelan decisiones de desplazamiento.</p></div><div class="card"><h3>Tiempo discreto</h3><p>El combate depende del paso $dt$.</p></div><div class="card"><h3>Censura temporal</h3><p>Un histograma de una misión no es una prueba formal.</p></div><div class="card"><h3>Error Monte Carlo</h3><p>Los resultados son estimaciones con incertidumbre.</p></div></div>
+  </section>
+
+  <section class="slide" data-title="Conclusiones">
+    <div class="kicker">Cierre</div><h2>Conclusiones</h2>
+    <div class="grid grid3"><div class="card"><h3>1. Conexión</h3><p>La variable continua $\Delta_i$ controla directamente el siguiente evento visible.</p></div><div class="card"><h3>2. Variabilidad</h3><p>Igual tasa media no implica igual concurrencia ni igual supervivencia.</p></div><div class="card"><h3>3. Inferencia</h3><p>Monte Carlo e intervalos evitan concluir desde una sola partida.</p></div><div class="card"><h3>4. Ingeniería</h3><p>La separación de motor, visuales e interfaz facilita verificación.</p></div><div class="card"><h3>5. Visualización</h3><p>Las mallas procedurales mantienen la experiencia dentro de Streamlit.</p></div><div class="card"><h3>6. Elección</h3><p>Poisson es principal por sus supuestos e interpretabilidad.</p></div></div>
+  </section>
+
+  <section class="slide" data-title="Demostración">
+    <div class="kicker">Ruta de exposición</div><h2>Demostración en cinco pasos</h2>
+    <div class="flow"><div class="node">1. Configurar</div><div class="arrow">→</div><div class="node">2. Simular misión</div><div class="arrow">→</div><div class="node">3. Explorar 3D</div><div class="arrow">→</div><div class="node">4. Comparar modelos</div><div class="arrow">→</div><div class="node">5. Ejecutar Monte Carlo</div></div>
+    <div class="formula">$\texttt{streamlit run app.py}$</div>
+    <p class="lead">Mostrar la tabla de variables generadas, cambiar la tasa, conservar la semilla y explicar por qué el porcentaje debe leerse junto con su intervalo de confianza.</p>
+    <div class="callout"><strong>Trabajo futuro:</strong> proceso de Poisson no homogéneo $\lambda(t)$, movimiento del protagonista, obstáculos funcionales y una versión 3D independiente en Panda3D.</div>
+  </section>
+
+  <section class="slide hero" data-title="Cierre final">
+    <div class="hero-copy"><div class="kicker">Outbreak: Stochastic Survival Lab</div><div class="display">MEDIR.<br><span>SIMULAR.</span><br>EXPLICAR.</div><p class="lead">La incertidumbre no se elimina: se modela, se repite y se comunica con evidencia.</p></div>
+  </section>
+</main>
+
+<div class="controls"><button id="prev" aria-label="Diapositiva anterior">← Anterior</button><span class="counter" id="counter"></span><button id="overviewButton" aria-label="Vista general">Vista</button><button id="next" aria-label="Diapositiva siguiente">Siguiente →</button></div>
+<div class="hint">Flechas: navegar | O: vista general | F: pantalla completa</div>
+<div class="overview" id="overview"></div>
+
 <script>
-const slides=[...document.querySelectorAll('.slide')];let i=0;function show(n){slides[i].classList.remove('active');i=(n+slides.length)%slides.length;slides[i].classList.add('active');document.getElementById('counter').textContent=`${i+1} / ${slides.length}`;if(window.MathJax?.typesetPromise)MathJax.typesetPromise([slides[i]])}function next(){show(i+1)}function prev(){show(i-1)}document.addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key===' ')next();if(e.key==='ArrowLeft')prev()});document.getElementById('counter').textContent=`1 / ${slides.length}`;
+  const slides=[...document.querySelectorAll('.slide')];
+  const counter=document.getElementById('counter');
+  const progress=document.getElementById('progress');
+  const overview=document.getElementById('overview');
+  let index=0;
+  function render(){slides.forEach((slide,i)=>slide.classList.toggle('active',i===index));counter.textContent=`${index+1} / ${slides.length}`;progress.style.width=`${((index+1)/slides.length)*100}%`;if(window.MathJax?.typesetPromise)window.MathJax.typesetPromise([slides[index]])}
+  function move(delta){index=(index+delta+slides.length)%slides.length;render()}
+  function toggleOverview(){overview.classList.toggle('show')}
+  slides.forEach((slide,i)=>{const item=document.createElement('div');item.className='thumb';item.innerHTML=`<small>${String(i+1).padStart(2,'0')}</small><strong>${slide.dataset.title}</strong>`;item.onclick=()=>{index=i;toggleOverview();render()};overview.appendChild(item)});
+  document.getElementById('prev').onclick=()=>move(-1);document.getElementById('next').onclick=()=>move(1);document.getElementById('overviewButton').onclick=toggleOverview;
+  document.addEventListener('keydown',event=>{if(['ArrowRight','PageDown',' '].includes(event.key)){event.preventDefault();move(1)}if(['ArrowLeft','PageUp'].includes(event.key)){event.preventDefault();move(-1)}if(event.key.toLowerCase()==='o')toggleOverview();if(event.key.toLowerCase()==='f')document.documentElement.requestFullscreen?.();if(event.key==='Escape'&&overview.classList.contains('show'))toggleOverview()});
+  render();
 </script>
 </body>
 </html>
