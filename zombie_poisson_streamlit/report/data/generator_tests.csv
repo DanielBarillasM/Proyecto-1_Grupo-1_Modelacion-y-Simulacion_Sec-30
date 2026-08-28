@@ -1,0 +1,8 @@
+generator,test,statistic,p_value,alpha,passes
+Poisson-exponencial,KS contra Exponencial,0.017179281795037804,0.18634385474888626,0.05,True
+Marsaglia Polar,"KS de Z contra Normal(0,1)",0.008642305662566852,0.9236248377007695,0.05,True
+Polar-lognormal,KS contra Lognormal,0.008642305662566852,0.9236248377007695,0.05,True
+Poisson-exponencial,Correlación de rezago 1,0.012705122667013142,0.4218456781394758,0.05,True
+Polar-lognormal,Correlación de rezago 1,0.001980375446050932,0.9003689736220868,0.05,True
+Conteo Poisson,Índice de dispersión,577.5873903539898,0.5439483434617046,0.05,True
+Marsaglia Polar,Aceptación contra pi/4,0.779423226812159,0.4561538514868754,0.05,True

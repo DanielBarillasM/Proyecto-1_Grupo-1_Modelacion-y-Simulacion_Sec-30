@@ -37,20 +37,25 @@ if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
 from simulation import (
+    GeneratorValidationResult,
     SimulationConfig,
     compare_arrival_models,
     config_as_dict,
     estimate_survival_probability,
+    paired_comparison_statistics,
     simulate,
     summarize_batch,
     survival_curve,
+    validate_arrival_generators,
 )
 from visuals import (
     arena_3d,
     arrival_process_figure,
+    generator_validation_figure,
     interarrival_figure,
     model_comparison_figure,
     monte_carlo_figure,
+    paired_effects_figure,
     survival_curve_figure,
     timeline_figure,
 )
@@ -140,10 +145,32 @@ def run_monte_carlo(config_dict: dict[str, object], runs: int) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def run_comparison(config_dict: dict[str, object], runs: int) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Cachea la comparación pareada Poisson frente a Polar-lognormal."""
+def run_comparison(
+    config_dict: dict[str, object],
+    runs: int,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Cachea corridas, resúmenes y contrastes pareados de ambos modelos."""
 
-    return compare_arrival_models(SimulationConfig(**config_dict), runs=runs)
+    trials, summary = compare_arrival_models(
+        SimulationConfig(**config_dict), runs=runs
+    )
+    effects, contingency = paired_comparison_statistics(trials)
+    return trials, summary, effects, contingency
+
+
+@st.cache_data(show_spinner=False)
+def run_validation(
+    config_dict: dict[str, object],
+    sample_size: int,
+    count_repetitions: int,
+) -> GeneratorValidationResult:
+    """Cachea la auditoría estadística para no repetir muestras al navegar."""
+
+    return validate_arrival_generators(
+        SimulationConfig(**config_dict),
+        sample_size=sample_size,
+        count_repetitions=count_repetitions,
+    )
 
 
 @st.cache_data(show_spinner=False)
@@ -244,6 +271,7 @@ with st.sidebar:
         st.session_state["simulation_count"] = st.session_state.get("simulation_count", 0) + 1
         st.session_state.pop("comparison_result", None)
         st.session_state.pop("mc_result", None)
+        st.session_state.pop("validation_result", None)
 
     st.markdown("---")
     st.caption(
@@ -322,16 +350,22 @@ st.markdown(
 metrics = st.columns(6)
 metrics[0].metric("Tiempo resistido", f"{result.survival_time:.1f} s", f"de {config.duration:.0f} s")
 metrics[1].metric("HP final", f"{result.final_hp:.1f}", f"{result.final_hp-config.player_hp:+.1f}")
-metrics[2].metric("Llegadas ocurridas", result.generated, f"E[N]={result.expected_arrivals:.1f}")
+count_reference = (
+    f"E[N]={result.expected_arrivals:.1f}"
+    if config.arrival_model == "poisson"
+    else f"lambda*T ref.={result.expected_arrivals:.1f}"
+)
+metrics[2].metric("Llegadas ocurridas", result.generated, count_reference)
 metrics[3].metric("Eliminados", result.eliminated, f"{100*result.eliminated/max(result.generated,1):.0f} %")
 metrics[4].metric("Activos al cierre", result.remaining)
 metrics[5].metric("Pico simultáneo", result.max_concurrent)
 
-# Las pestañas siguen el orden recomendado de exposición: observar una corrida,
-# explicar su origen matemático, comparar modelos y finalmente inferir por lotes.
-simulation_tab, math_tab, comparison_tab, monte_carlo_tab, guide_tab = st.tabs([
+# Las pestañas siguen el orden de una investigación: observar, fundamentar,
+# validar los generadores, comparar los modelos e inferir mediante repetición.
+simulation_tab, math_tab, validation_tab, comparison_tab, monte_carlo_tab, guide_tab = st.tabs([
     "Simulación 3D",
     "Desarrollo matemático",
+    "Validación de generadores",
     "Comparación de modelos",
     "Laboratorio Monte Carlo",
     "Guía del proyecto",
@@ -437,7 +471,8 @@ with math_tab:
     theory = st.columns(4)
     theory[0].metric("Tasa", f"{config.lambda_rate*60:.1f}/min")
     theory[1].metric("E[Delta]", f"{1/config.lambda_rate:.3f} s")
-    theory[2].metric("E[N(T)]", f"{config.lambda_rate*config.duration:.1f}")
+    count_label = "E[N(T)]" if config.arrival_model == "poisson" else "lambda*T (referencia)"
+    theory[2].metric(count_label, f"{config.lambda_rate*config.duration:.1f}")
     theory[3].metric("Paso dt", f"{config.dt:.3f} s")
 
     st.markdown("### Primeras variables generadas")
@@ -463,6 +498,138 @@ with math_tab:
     )
 
 
+with validation_tab:
+    # Este laboratorio usa muestras fijas ajenas al horizonte de la misión.
+    # Así se evita confundir la censura temporal con un defecto del generador.
+    section_header("Control de calidad estadístico", "¿Generamos las distribuciones declaradas?")
+    st.markdown(
+        """
+        La auditoría combina pruebas de Kolmogorov--Smirnov, correlación de
+        rezago uno, dispersión del conteo Poisson y tasa de aceptación de
+        Marsaglia. Se adopta un nivel de significancia de 5 %. No rechazar una
+        hipótesis no demuestra perfección; indica que la muestra no contradice
+        el modelo teórico bajo el contraste utilizado.
+        """
+    )
+    sample_col, count_col = st.columns(2)
+    validation_sample_size = sample_col.select_slider(
+        "Interarribos por generador",
+        options=[1_000, 2_000, 4_000, 8_000],
+        value=4_000,
+        key="validation_sample_size",
+    )
+    validation_count_repetitions = count_col.select_slider(
+        "Calendarios para validar N(T)",
+        options=[200, 400, 600, 1_000],
+        value=600,
+        key="validation_count_repetitions",
+    )
+    validation_signature = (
+        tuple(sorted(config_as_dict(config).items())),
+        int(validation_sample_size),
+        int(validation_count_repetitions),
+    )
+    if st.button("EJECUTAR VALIDACIÓN ESTADÍSTICA", type="primary", width="stretch"):
+        with st.spinner("Generando muestras y ejecutando contrastes..."):
+            validation = run_validation(
+                config_as_dict(config),
+                int(validation_sample_size),
+                int(validation_count_repetitions),
+            )
+        st.session_state["validation_result"] = {
+            "signature": validation_signature,
+            "validation": validation,
+        }
+
+    validation_saved = st.session_state.get("validation_result")
+    if validation_saved is None:
+        st.info("Ejecuta la validación para producir valores p, momentos, gráficos Q-Q y benchmark.")
+    elif validation_saved["signature"] != validation_signature:
+        st.warning("Cambió la configuración del laboratorio. Ejecuta nuevamente.")
+    else:
+        validation = validation_saved["validation"]
+        passed = int(validation.tests["passes"].sum())
+        total = len(validation.tests)
+        validation_metrics = st.columns(4)
+        validation_metrics[0].metric("Contrastes no rechazados", f"{passed}/{total}")
+        validation_metrics[1].metric(
+            "Media exponencial",
+            f"{validation.moments.iloc[0]['mean_observed']:.3f} s",
+            f"teórica {validation.moments.iloc[0]['mean_theoretical']:.3f}",
+        )
+        validation_metrics[2].metric(
+            "CV lognormal",
+            f"{validation.moments.iloc[1]['cv_observed']:.3f}",
+            f"objetivo {validation.moments.iloc[1]['cv_theoretical']:.3f}",
+        )
+        polar_speed = float(
+            validation.performance.loc[
+                validation.performance["generator"] == "Polar-lognormal",
+                "microseconds_per_value",
+            ].iloc[0]
+        )
+        validation_metrics[3].metric("Costo Polar", f"{polar_speed:.2f} us/valor")
+        if passed == total:
+            st.success(
+                "Con alpha=0.05, ninguno de los siete contrastes rechaza el comportamiento esperado."
+            )
+        else:
+            st.warning(
+                "Al menos un contraste fue rechazado. Revisa el valor p y repite con otra semilla antes de concluir."
+            )
+
+        st.plotly_chart(
+            generator_validation_figure(
+                validation, config.lambda_rate, config.polar_cv
+            ),
+            use_container_width=True,
+            config={"displaylogo": False},
+        )
+        tests_display = validation.tests.copy()
+        tests_display.columns = [
+            "Generador", "Contraste", "Estadístico", "Valor p", "Alpha", "No se rechaza"
+        ]
+        st.dataframe(
+            tests_display.style.format({
+                "Estadístico": "{:.5f}",
+                "Valor p": "{:.5f}",
+                "Alpha": "{:.2f}",
+            }),
+            width="stretch",
+            hide_index=True,
+        )
+        details_left, details_right = st.columns(2)
+        with details_left:
+            st.markdown("### Momentos empíricos y teóricos")
+            moments_display = validation.moments.copy()
+            moments_display.columns = [
+                "Generador", "Media teórica", "Media observada",
+                "Varianza teórica", "Varianza observada", "CV teórico", "CV observado"
+            ]
+            st.dataframe(
+                moments_display.style.format(precision=4),
+                width="stretch",
+                hide_index=True,
+            )
+        with details_right:
+            st.markdown("### Rendimiento descriptivo")
+            performance_display = validation.performance.copy()
+            performance_display.columns = [
+                "Generador", "Tamaño", "Repeticiones", "Mediana (ms)", "us por valor"
+            ]
+            st.dataframe(
+                performance_display.style.format({
+                    "Mediana (ms)": "{:.4f}",
+                    "us por valor": "{:.4f}",
+                }),
+                width="stretch",
+                hide_index=True,
+            )
+            st.caption(
+                "El benchmark depende del equipo y se usa como criterio de costo, no como prueba de ajuste."
+            )
+
+
 with comparison_tab:
     # Los resultados se guardan junto a una firma. Si cambia una entrada, la UI
     # conserva el lote para inspección interna pero exige recalcularlo antes de
@@ -480,11 +647,15 @@ with comparison_tab:
     )
     if st.button("EJECUTAR COMPARACIÓN POISSON VS POLAR", type="primary", width="stretch"):
         with st.spinner("Ejecutando el experimento pareado..."):
-            trials, summary = run_comparison(config_as_dict(config), int(comparison_runs))
+            trials, summary, effects, contingency = run_comparison(
+                config_as_dict(config), int(comparison_runs)
+            )
         st.session_state["comparison_result"] = {
             "signature": (tuple(sorted(config_as_dict(config).items())), int(comparison_runs)),
             "trials": trials,
             "summary": summary,
+            "effects": effects,
+            "contingency": contingency,
         }
     comparison_saved = st.session_state.get("comparison_result")
     comparison_signature = (tuple(sorted(config_as_dict(config).items())), int(comparison_runs))
@@ -495,6 +666,8 @@ with comparison_tab:
     else:
         summary = comparison_saved["summary"]
         trials = comparison_saved["trials"]
+        effects = comparison_saved["effects"]
+        contingency = comparison_saved["contingency"]
         left, right = st.columns([1.4, 1])
         with left:
             st.plotly_chart(model_comparison_figure(summary), use_container_width=True, config={"displaylogo": False})
@@ -518,6 +691,58 @@ with comparison_tab:
             )
         with st.expander("Ver corridas del experimento"):
             st.dataframe(trials, width="stretch", hide_index=True)
+
+        section_header("Inferencia sobre diferencias", "Efectos pareados e incertidumbre")
+        effect_left, effect_right = st.columns([1.35, 1])
+        with effect_left:
+            st.plotly_chart(
+                paired_effects_figure(effects),
+                use_container_width=True,
+                config={"displaylogo": False},
+            )
+        with effect_right:
+            effects_display = effects.copy()
+            effects_display["metric"] = effects_display["metric"].map({
+                "survived": "Supervivencia",
+                "survival_time": "Tiempo resistido",
+                "generated": "Llegadas",
+                "max_concurrent": "Pico activo",
+            })
+            effects_display.columns = [
+                "Métrica", "Media Poisson", "Media Polar", "Diferencia",
+                "IC inferior", "IC superior", "Valor p", "Prueba"
+            ]
+            st.dataframe(
+                effects_display.style.format({
+                    "Media Poisson": "{:.4f}",
+                    "Media Polar": "{:.4f}",
+                    "Diferencia": "{:+.4f}",
+                    "IC inferior": "{:+.4f}",
+                    "IC superior": "{:+.4f}",
+                    "Valor p": "{:.5f}",
+                }),
+                width="stretch",
+                hide_index=True,
+            )
+            st.markdown("### Tabla de contingencia")
+            st.dataframe(contingency, width="stretch", hide_index=True)
+
+        survival_effect = effects.loc[effects["metric"] == "survived"].iloc[0]
+        mcnemar_p = float(survival_effect["p_value"])
+        paired_ci_low = float(survival_effect["ci_low"]) * 100.0
+        paired_ci_high = float(survival_effect["ci_high"]) * 100.0
+        inference = (
+            "existe evidencia de una diferencia de supervivencia"
+            if mcnemar_p < 0.05
+            else "no hay evidencia suficiente para declarar una diferencia de supervivencia"
+        )
+        st.markdown(
+            f'<div class="callout amber"><b>Conclusión pareada</b><br>'
+            f'Con McNemar exacta, p={mcnemar_p:.5f}: {inference} al 5 %. '
+            f'El IC bootstrap del efecto Poisson - Polar es '
+            f'[{paired_ci_low:+.1f}, {paired_ci_high:+.1f}] puntos porcentuales.</div>',
+            unsafe_allow_html=True,
+        )
 
 
 with monte_carlo_tab:
@@ -579,8 +804,9 @@ with guide_tab:
     with objective_col:
         st.markdown("### Objetivo general")
         st.write(
-            "Modelar la aparición aleatoria de infectados y estimar la probabilidad de que "
-            "un protagonista sobreviva un horizonte temporal bajo reglas de combate controladas."
+            "Modelar el subsistema real de aparición y balance de enemigos de un videojuego "
+            "de supervivencia, y estimar la probabilidad de completar una misión bajo reglas "
+            "de combate controladas."
         )
         st.markdown("### Pregunta de investigación")
         st.write(
@@ -597,6 +823,24 @@ with guide_tab:
             - **Salida:** supervivencia, tiempo resistido, llegadas, bajas y concurrencia máxima.
             """
         )
+    st.markdown("### Fuentes de aleatoriedad y justificación")
+    st.markdown(
+        """
+        | Fuente | Distribución | Justificación |
+        |---|---|---|
+        | Interarribo principal | Exponencial con tasa `lambda` | Tasa constante, independencia y falta de memoria |
+        | Interarribo de contraste | Lognormal con media `1/lambda` y CV configurable | Tiempo positivo y regularidad controlable |
+        | Normal auxiliar | Marsaglia Polar | Método de generación visto en el curso |
+        | Ángulo de aparición | Uniforme en `[0, 2*pi)` | Simetría alrededor de la arena |
+        | Radio de aparición | Uniforme entre 94 % y 103 % del radio base | Variación espacial acotada |
+        | Velocidad | Uniforme entre 88 % y 112 % del valor base | Heterogeneidad sin extremos irreales |
+        | HP y DPS | Uniforme entre 90 % y 112 % del valor base | Diferencias individuales controladas |
+        """
+    )
+    st.caption(
+        "Los flujos de llegadas y atributos están separados para que cambiar el método temporal "
+        "no modifique accidentalmente las características del enemigo de igual índice."
+    )
     st.markdown("### Supuestos")
     st.markdown(
         """
@@ -607,6 +851,12 @@ with guide_tab:
         5. Poisson supone incrementos independientes; Polar-lognormal es un proceso de renovación distinto.
         6. La escena 3D representa el estado del modelo y no reemplaza un motor de videojuegos.
         """
+    )
+    st.markdown("### Criterio de comparación")
+    st.write(
+        "La elección no depende únicamente de qué modelo produce más supervivencia. Se evalúan "
+        "ajuste distributivo, independencia, costo de generación, interpretabilidad, efecto "
+        "pareado sobre las salidas y coherencia de los supuestos con un sistema de apariciones."
     )
     st.markdown("### Decisión tecnológica 3D")
     st.write(
@@ -619,6 +869,8 @@ with guide_tab:
     st.markdown(
         "- `../README.md`: instalación, arquitectura, metodología y uso.\n"
         "- `report/informe.tex`: informe académico compilable.\n"
+        "- `report/generate_report_assets.py`: regeneración trazable de cifras, tablas y resultados.\n"
+        "- `report/data/`: datos CSV auditables usados por el informe y la presentación.\n"
         "- `presentation/presentacion.html`: exposición navegable con teclado y controles.\n"
         "- `tests/test_simulation.py`: verificaciones automáticas del motor."
     )

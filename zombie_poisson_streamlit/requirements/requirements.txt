@@ -2,14 +2,23 @@
 # Install from ``zombie_poisson_streamlit`` with:
 # python -m pip install -r requirements/requirements.txt
 
+# Versions verified together on the reference environment. Exact pins reduce
+# installation risk on presentation day; update them only after running tests.
+
 # Reactive web interface and application server.
-streamlit>=1.50,<2
+streamlit==1.50.0
 
 # Numerical random generation and vector calculations.
-numpy>=1.26
+numpy==2.2.2
 
 # Tabular simulation results and statistical summaries.
-pandas>=2.1
+pandas==2.2.3
 
 # Interactive charts and procedural three-dimensional scene.
-plotly>=5.24
+plotly==6.9.0
+
+# Formal goodness-of-fit, paired tests and probability distributions.
+scipy==1.15.2
+
+# Reproducible static figures embedded in the LaTeX report.
+matplotlib==3.10.1

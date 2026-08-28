@@ -7,7 +7,7 @@
   <script>
     window.MathJax={tex:{inlineMath:[['$','$'],['\\(','\\)']]},svg:{fontCache:'global'}};
   </script>
-  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+  <script defer src="vendor/mathjax/tex-svg.js"></script>
   <style>
     :root{--bg:#070908;--panel:#101612;--panel2:#151d18;--line:#303e35;--text:#edf3ee;--muted:#97a79e;--lime:#c7ff73;--green:#95df6a;--red:#ff606b;--amber:#f3a64f;--blue:#68b8d8}
     *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:Inter,"Segoe UI",Arial,sans-serif}.deck{width:100%;height:100%}.slide{display:none;position:absolute;inset:0;padding:6vh 7vw 10vh;background:radial-gradient(circle at 15% 0,rgba(119,159,81,.13),transparent 33%),radial-gradient(circle at 95% 15%,rgba(153,42,51,.1),transparent 28%),linear-gradient(160deg,#070908,#0a0e0b);overflow:auto}.slide.active{display:flex;flex-direction:column;justify-content:center;animation:enter .35s ease-out}@keyframes enter{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
@@ -116,6 +116,30 @@
     <div class="callout"><strong>Criterio:</strong> Poisson es el modelo principal por interpretación y parsimonia cuando son razonables la tasa constante y la independencia; no porque garantice un resultado de juego específico.</div>
   </section>
 
+  <section class="slide" data-title="Fuentes aleatorias">
+    <div class="kicker">Modelo completo</div><h2>No solo varía el interarribo</h2>
+    <table class="table"><thead><tr><th>Fuente</th><th>Distribución</th><th>Justificación</th></tr></thead><tbody>
+      <tr><td>Ángulo</td><td>$U(0,2\pi)$</td><td>Simetría alrededor de la arena.</td></tr>
+      <tr><td>Radio</td><td>$U(0.94R,1.03R)$</td><td>Variación espacial acotada.</td></tr>
+      <tr><td>Velocidad</td><td>$U(0.88v,1.12v)$</td><td>Heterogeneidad sin extremos.</td></tr>
+      <tr><td>HP y DPS</td><td>$U(0.90b,1.12b)$</td><td>Diferencias individuales controladas.</td></tr>
+      <tr><td>Semillas</td><td>Flujos separados</td><td>Comparaciones reproducibles y pareadas.</td></tr>
+    </tbody></table>
+    <div class="callout"><strong>Sistema real:</strong> se modela el subsistema de aparición y balance de enemigos de un videojuego, no la existencia literal de un apocalipsis.</div>
+  </section>
+
+  <section class="slide" data-title="Validación formal">
+    <div class="kicker">Calidad de los generadores</div><h2>Siete contrastes, no solo un histograma</h2>
+    <div class="split-image">
+      <div class="image-frame"><img src="../assets/report-generator-validation.png" alt="Validación estadística de los generadores"></div>
+      <div>
+        <div class="card"><h3>Bondad de ajuste</h3><p>KS exponencial: $p=0.1863$. KS normal y lognormal: $p=0.9236$.</p></div>
+        <div class="card" style="margin-top:12px"><h3>Independencia y conteo</h3><p>Rezago uno, aceptación Polar e índice de dispersión tampoco se rechazan con $\alpha=0.05$.</p></div>
+        <div class="callout"><strong>Lectura:</strong> no rechazar el modelo significa que la muestra no lo contradice; no demuestra perfección absoluta.</div>
+      </div>
+    </div>
+  </section>
+
   <section class="slide" data-title="Arena y combate">
     <div class="kicker">Representación del sistema</div><h2>Del calendario al escenario</h2>
     <div class="split-image">
@@ -157,16 +181,35 @@
     <p class="lead">Una partida es una realización. Repetir $R$ veces permite estimar una proporción de supervivencia.</p>
     <div class="formula">$$\widehat p=\frac{1}{R}\sum_{r=1}^{R}I_r,\qquad I_r\in\{0,1\}$$</div>
     <div class="grid grid3"><div class="card"><h3>Semillas independientes</h3><p>Cada corrida recibe una semilla derivada de una maestra.</p></div><div class="card"><h3>Comparación pareada</h3><p>Poisson y Polar usan el mismo vector de semillas.</p></div><div class="card"><h3>Intervalo de Wilson</h3><p>El IC al 95 % muestra la precisión, incluso cerca de 0 o 1.</p></div></div>
-    <div class="callout"><strong>Regla de lectura:</strong> no declarar diferencias concluyentes observando solo dos porcentajes; revisar amplitud y superposición de intervalos.</div>
+    <div class="callout"><strong>Regla de lectura:</strong> Wilson describe cada proporción; McNemar y el bootstrap pareado evalúan directamente la diferencia entre métodos.</div>
   </section>
 
   <section class="slide" data-title="Resultados">
     <div class="kicker">Escenario base, 400 partidas por modelo</div><h2>Resultados reproducibles de referencia</h2>
     <div class="grid">
       <div><div class="bars"><div class="bar" style="height:96.5%"><span>96.5 %</span><label>Poisson</label><i class="ci" style="height:3.7%;top:-1%"></i></div><div class="bar polar" style="height:100%"><span>100 %</span><label>Polar-lognormal</label><i class="ci" style="height:1%;top:0"></i></div></div></div>
-      <div><table class="table"><thead><tr><th>Métrica</th><th>Poisson</th><th>Polar</th></tr></thead><tbody><tr><td>IC 95 %</td><td>[94.2, 97.9] %</td><td>[99.0, 100] %</td></tr><tr><td>Tiempo medio</td><td>88.526 s</td><td>90.000 s</td></tr><tr><td>Llegadas medias</td><td>57.133</td><td>57.778</td></tr><tr><td>Pico activo medio</td><td>9.483</td><td>6.483</td></tr></tbody></table></div>
+      <div><table class="table"><thead><tr><th>Métrica</th><th>Poisson</th><th>Polar</th></tr></thead><tbody><tr><td>IC 95 %</td><td>[94.2, 97.9] %</td><td>[99.0, 100] %</td></tr><tr><td>Tiempo medio</td><td>88.528 s</td><td>90.000 s</td></tr><tr><td>Llegadas medias</td><td>57.133</td><td>57.778</td></tr><tr><td>Pico activo medio</td><td>9.483</td><td>6.483</td></tr></tbody></table></div>
     </div>
-    <div class="callout"><strong>Hallazgo:</strong> con tasa media semejante, Poisson generó mayor concurrencia debido a rachas cortas. La forma de la distribución importa.</div>
+    <div class="callout"><strong>Hallazgo:</strong> efecto Poisson - Polar = -3.5 puntos porcentuales, IC bootstrap [-5.5, -1.8], McNemar exacta $p=0.000122$.</div>
+  </section>
+
+  <section class="slide" data-title="Efectos pareados">
+    <div class="kicker">Inferencia sobre diferencias</div><h2>La comparación conserva cada par</h2>
+    <div class="split-image">
+      <div class="image-frame"><img src="../assets/report-model-comparison.png" alt="Comparación pareada de supervivencia y concurrencia"></div>
+      <div>
+        <div class="metric"><small>Ambos sobreviven</small><b>386</b></div>
+        <div class="metric"><small>Solo Polar sobrevive</small><b>14</b></div>
+        <div class="metric"><small>Solo Poisson / ambos fallan</small><b>0 / 0</b></div>
+        <div class="callout"><strong>Congestión:</strong> Poisson produjo un pico medio 3.0 enemigos mayor; Wilcoxon pareada da $p&lt;10^{-60}$.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide" data-title="Sensibilidad">
+    <div class="kicker">Casos extremos</div><h2>La tasa cambia el régimen de supervivencia</h2>
+    <div class="image-frame" style="max-width:1100px;margin:0 auto"><img src="../assets/report-survival-curves.png" alt="Curvas de supervivencia según la tasa"></div>
+    <div class="callout"><strong>Interpretación:</strong> el resultado base no es universal. Aumentar $\lambda$ reduce la supervivencia y modifica la distancia entre modelos.</div>
   </section>
 
   <section class="slide" data-title="Interpretación">
@@ -179,9 +222,9 @@
   </section>
 
   <section class="slide" data-title="Verificación">
-    <div class="kicker">Calidad del desarrollo</div><h2>Nueve pruebas automáticas</h2>
+    <div class="kicker">Calidad del desarrollo</div><h2>Doce pruebas automáticas</h2>
     <div class="grid grid3">
-      <div class="card"><h3>Propiedad Poisson</h3><p>Media y varianza cercanas a $\lambda T$.</p></div><div class="card"><h3>Media Polar</h3><p>Interarribo positivo y cercano a $1/\lambda$.</p></div><div class="card"><h3>Reproducibilidad</h3><p>Igual semilla, igual trayectoria.</p></div><div class="card"><h3>Coherencia temporal</h3><p>No se cuentan llegadas posteriores a la derrota.</p></div><div class="card"><h3>Comparación pareada</h3><p>Mismas semillas para ambos modelos.</p></div><div class="card"><h3>Precisión numérica</h3><p>Resultado estable al reducir $dt$.</p></div>
+      <div class="card"><h3>Propiedad Poisson</h3><p>Media, varianza, KS y dispersión.</p></div><div class="card"><h3>Marsaglia y lognormal</h3><p>KS, momentos, aceptación e independencia.</p></div><div class="card"><h3>Reproducibilidad</h3><p>Igual semilla, igual trayectoria.</p></div><div class="card"><h3>Límite temporal</h3><p>Ningún daño se aplica después de $T$.</p></div><div class="card"><h3>Comparación pareada</h3><p>Dirección, contingencia y semillas.</p></div><div class="card"><h3>Precisión numérica</h3><p>Resultado estable al reducir $dt$.</p></div>
     </div>
     <div class="formula">$\texttt{python -m unittest discover -s tests -v}$</div>
   </section>

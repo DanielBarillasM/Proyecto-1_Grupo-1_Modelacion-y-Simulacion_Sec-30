@@ -13,7 +13,8 @@
   <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white">
   <img alt="Streamlit" src="https://img.shields.io/badge/Streamlit-1.50%2B-FF4B4B?logo=streamlit&logoColor=white">
   <img alt="Plotly 3D" src="https://img.shields.io/badge/Plotly-3D-3F4F75?logo=plotly&logoColor=white">
-  <img alt="Pruebas" src="https://img.shields.io/badge/tests-9-success">
+  <img alt="Pruebas" src="https://img.shields.io/badge/tests-12-success">
+  <img alt="SciPy" src="https://img.shields.io/badge/SciPy-validación-8CAAE6?logo=scipy&logoColor=white">
   <img alt="Licencia MIT" src="https://img.shields.io/badge/license-MIT-8A2BE2">
 </p>
 
@@ -26,6 +27,7 @@
 | [Descripción](#descripción-general) | Propósito, pregunta y alcance del proyecto |
 | [Modelo matemático](#modelo-matemático) | Poisson y alternativa Polar-lognormal |
 | [Motor de simulación](#motor-de-simulación) | Reglas, variables y parámetros |
+| [Validación](#validación-formal-de-los-generadores) | Bondad de ajuste, independencia y rendimiento |
 | [Experimentos](#experimentos-estadísticos) | Monte Carlo, comparación pareada y curva de supervivencia |
 | [Arquitectura](#arquitectura-del-proyecto) | Organización y responsabilidades del código |
 | [Ejecución](#inicio-rápido) | Instalación y comandos correctos para la nueva estructura |
@@ -34,10 +36,11 @@
 
 ## Descripción general
 
-Este proyecto académico de **Modelación y Simulación** representa una misión de
-supervivencia ante infectados. El sistema genera los instantes de aparición,
-simula movimiento y combate, y estima la probabilidad de que el protagonista
-permanezca con vida hasta el final del horizonte temporal.
+Este proyecto académico de **Modelación y Simulación** estudia un sistema real
+de software: el subsistema de aparición y balance de enemigos de un videojuego
+de supervivencia. La narrativa utiliza infectados, mientras el modelo genera
+instantes de aparición, simula movimiento y combate, y estima la probabilidad
+de completar un horizonte temporal.
 
 La investigación se apoya en cuatro pilares:
 
@@ -46,7 +49,8 @@ La investigación se apoya en cuatro pilares:
 | Modelación probabilística | Proceso de Poisson e interarribos exponenciales |
 | Modelo de contraste | Proceso de renovación lognormal generado con Marsaglia polar |
 | Simulación computacional | Motor discreto con paso temporal configurable |
-| Inferencia y comunicación | Monte Carlo, intervalo de Wilson, gráficas y escena 3D |
+| Validación | KS, independencia, dispersión, aceptación y benchmark |
+| Inferencia y comunicación | Wilson, McNemar, Wilcoxon, bootstrap, gráficas y escena 3D |
 
 > **Pregunta central:** ¿cómo cambia la supervivencia cuando aumenta la tasa de
 > llegadas o cuando cambia la distribución de los tiempos entre llegadas?
@@ -138,11 +142,18 @@ $$
 | Variabilidad | CV igual a 1 | CV configurable |
 | Función en el proyecto | Modelo principal | Contraste experimental |
 
+> Para Poisson, $\mathbb E[N(T)]=\lambda T$ es exacto. En una renovación
+> lognormal finita, $\lambda T$ es una referencia de tasa: igualar
+> $\mathbb E[\Delta]=1/\lambda$ no iguala exactamente la esperanza del conteo
+> para todo horizonte.
+
 ## Motor de simulación
 
-La partida se aproxima mediante un paso fijo $dt$. En cada iteración se activan
+La partida se aproxima mediante un paso fijo $\Delta t$. En cada iteración se activan
 las llegadas programadas, los infectados avanzan radialmente, el protagonista
 elige al objetivo vivo más cercano dentro de su alcance y se aplican los daños.
+El último paso usa $h=\min(\Delta t,T-t)$, por lo que ningún ataque o daño puede
+integrarse después del horizonte.
 
 ### Reglas operativas
 
@@ -157,6 +168,13 @@ Los atributos enemigos tienen variaciones uniformes acotadas. Las fuentes
 aleatorias de llegadas y atributos están separadas para que, con una misma
 semilla, el enemigo de igual índice conserve atributos equivalentes al comparar
 modelos.
+
+| Fuente adicional | Distribución implementada | Razón |
+|---|---|---|
+| Ángulo | $U(0,2\pi)$ | Simetría alrededor de la arena |
+| Radio | $U(0.94R,1.03R)$ | Variación espacial acotada |
+| Velocidad | $U(0.88v,1.12v)$ | Heterogeneidad controlada |
+| HP y DPS | $U(0.90b,1.12b)$ | Diferencias individuales sin extremos |
 
 ### Parámetros iniciales
 
@@ -176,6 +194,28 @@ modelos.
 La interfaz muestra las unidades y evita configuraciones geométricas inválidas.
 El motor vuelve a validar positivos, radios, precisión y límites antes de iniciar
 una corrida.
+
+## Validación formal de los generadores
+
+El laboratorio utiliza muestras de tamaño fijo, independientes del horizonte de
+una misión. Con $\alpha=0.05$ ejecuta siete controles:
+
+- KS de interarribos contra la exponencial teórica.
+- KS de las normales Marsaglia contra $N(0,1)$.
+- KS de interarribos contra la lognormal parametrizada.
+- Correlación de Pearson con rezago uno para ambos interarribos.
+- Índice de dispersión sobre calendarios Poisson repetidos.
+- Prueba binomial de la aceptación Polar contra $\pi/4$.
+- Comparación de media, varianza y CV teóricos frente a los observados.
+
+En la semilla de referencia ninguno fue rechazado: $p_{\mathrm{KS\ exp}}=0.1863$,
+$p_{\mathrm{KS\ normal}}=p_{\mathrm{KS\ lognormal}}=0.9236$ y
+$p_{\mathrm{disp.}}=0.5439$. No rechazar una hipótesis significa que la
+muestra no contradice el modelo; no es una garantía absoluta.
+
+<p align="center">
+  <img src="zombie_poisson_streamlit/assets/report-generator-validation.png" alt="Validación formal de los generadores" width="900">
+</p>
 
 ## Experimentos estadísticos
 
@@ -197,11 +237,30 @@ Poisson y Polar-lognormal se ejecutan con las mismas semillas por corrida. Este
 diseño pareado reduce la variación provocada por atributos enemigos y permite
 atribuir con mayor claridad las diferencias al patrón de llegadas.
 
+La inferencia se realiza sobre los pares:
+
+- McNemar exacta para supervivencia.
+- Wilcoxon pareada para métricas continuas.
+- Bootstrap de pares para intervalos del efecto Poisson menos Polar.
+
+Con 400 partidas por modelo, la diferencia de supervivencia fue $-3.5$ puntos
+porcentuales, IC bootstrap $[-5.5,-1.8]$ y $p=0.000122$. Poisson produjo un
+pico medio de concurrencia 3.0 enemigos mayor. El criterio de elección también
+considera ajuste, costo e interpretabilidad; no solamente supervivencia.
+
+<p align="center">
+  <img src="zombie_poisson_streamlit/assets/report-model-comparison.png" alt="Comparación pareada de los modelos" width="900">
+</p>
+
 ### Curva de supervivencia
 
 La interfaz también evalúa múltiples tasas. El resultado permite observar la
 relación entre presión de llegadas, intervalos de confianza y probabilidad de
 completar la misión.
+
+<p align="center">
+  <img src="zombie_poisson_streamlit/assets/report-survival-curves.png" alt="Sensibilidad de supervivencia frente a la tasa" width="850">
+</p>
 
 ## Interfaz y visualización 3D
 
@@ -229,6 +288,8 @@ flowchart LR
     UI --> VIEWS[App/visuals.py<br>Plotly y escena 3D]
     ENGINE --> VIEWS
     TESTS[tests/test_simulation.py] --> ENGINE
+    GENERATOR[report/generate_report_assets.py] --> ENGINE
+    GENERATOR --> DATA[report/data + figuras]
     ASSETS[assets/] --> UI
     ASSETS --> SLIDES[presentation/presentacion.html]
     ASSETS --> REPORT[report/informe.tex]
@@ -247,10 +308,15 @@ Proyecto-1_Grupo-1_Modelacion-y-Simulacion_Sec-30/
     |   `-- visuals.py
     |-- assets/
     |   |-- outbreak-command-center.png
-    |   `-- outbreak-tactical-model.png
+    |   |-- outbreak-tactical-model.png
+    |   `-- report-*.png
     |-- presentation/
+    |   |-- vendor/mathjax/
     |   `-- presentacion.html
     |-- report/
+    |   |-- data/
+    |   |-- generate_report_assets.py
+    |   |-- generated_results.tex
     |   |-- informe.tex
     |   `-- informe.pdf
     |-- requirements/
@@ -262,10 +328,11 @@ Proyecto-1_Grupo-1_Modelacion-y-Simulacion_Sec-30/
 
 | Archivo | Responsabilidad |
 |---|---|
-| [`App/simulation.py`](zombie_poisson_streamlit/App/simulation.py) | Generadores, combate, Monte Carlo e intervalos |
-| [`App/visuals.py`](zombie_poisson_streamlit/App/visuals.py) | Escena 3D y gráficas estadísticas |
+| [`App/simulation.py`](zombie_poisson_streamlit/App/simulation.py) | Generadores, validación, combate, Monte Carlo e inferencia pareada |
+| [`App/visuals.py`](zombie_poisson_streamlit/App/visuals.py) | Escena 3D, Q-Q y gráficas estadísticas |
 | [`App/app.py`](zombie_poisson_streamlit/App/app.py) | Formularios, estado, resultados y teoría |
 | [`tests/test_simulation.py`](zombie_poisson_streamlit/tests/test_simulation.py) | Pruebas deterministas y estadísticas |
+| [`report/generate_report_assets.py`](zombie_poisson_streamlit/report/generate_report_assets.py) | Regenera CSV, figuras y macros LaTeX |
 | [`report/informe.tex`](zombie_poisson_streamlit/report/informe.tex) | Informe académico reproducible |
 | [`presentation/presentacion.html`](zombie_poisson_streamlit/presentation/presentacion.html) | Exposición navegable en el navegador |
 
@@ -311,8 +378,9 @@ primera instalación basta con activar el entorno y ejecutar el último comando.
 3. Pulsar **SIMULAR MISIÓN**.
 4. Recorrer el tiempo y explorar la escena 3D.
 5. Revisar variables generadas y desarrollo matemático.
-6. Ejecutar la comparación pareada Poisson--Polar.
-7. Ejecutar Monte Carlo y analizar el intervalo de confianza.
+6. Ejecutar la validación formal de generadores.
+7. Ejecutar la comparación pareada Poisson--Polar.
+8. Ejecutar Monte Carlo y analizar el intervalo de confianza.
 
 ## Pruebas automatizadas
 
@@ -328,17 +396,18 @@ En sistemas tipo Unix el comando equivalente es:
 python -m unittest discover -s tests -v
 ```
 
-Las pruebas cubren reproducibilidad, media y varianza del conteo Poisson, media
-lognormal, consistencia posterior a una derrota, validación geométrica,
-emparejamiento de semillas y estabilidad respecto de $dt$.
+Las 12 pruebas cubren reproducibilidad, momentos, siete contrastes formales,
+consistencia posterior a una derrota, validación geométrica, emparejamiento,
+bootstrap, estabilidad respecto de $\Delta t$ y ausencia de daño después de $T$.
 
 ## Entregables académicos
 
 ### Presentación HTML
 
 El archivo [`presentacion.html`](zombie_poisson_streamlit/presentation/presentacion.html)
-es autocontenido salvo por las imágenes compartidas de `assets/`. Para abrirlo
-desde `zombie_poisson_streamlit` en Windows:
+usa imágenes compartidas de `assets/` y una copia local de MathJax. Por tanto,
+las fórmulas y diapositivas funcionan sin conexión. Para abrirlo desde
+`zombie_poisson_streamlit` en Windows:
 
 ```powershell
 Start-Process .\presentation\presentacion.html
@@ -349,8 +418,14 @@ o los controles en pantalla para navegar.
 
 ### Informe LaTeX
 
-El informe resuelve sus imágenes respecto de la carpeta `report/`. Compile desde
-allí para conservar las rutas correctas:
+Primero regenere evidencia, CSV, figuras y macros desde
+`zombie_poisson_streamlit`:
+
+```powershell
+python .\report\generate_report_assets.py
+```
+
+Luego compile desde `report/` para conservar las rutas:
 
 ```powershell
 cd .\report
@@ -368,6 +443,11 @@ generado está disponible en
 - Los infectados no colisionan ni evitan obstáculos; las ruinas son visuales.
 - El protagonista no se desplaza y enfoca un objetivo a la vez.
 - El combate es una aproximación de tiempo discreto.
+- La variación uniforme de atributos es una decisión de balance sin calibración
+  con telemetría real.
+- Los valores $p$ no miden importancia práctica; se complementan con efectos e
+  intervalos.
+- El benchmark depende del equipo donde se ejecute.
 - La curva de supervivencia es una estimación Monte Carlo, no una solución
   analítica exacta.
 - Un histograma de una sola partida puede estar sesgado por el horizonte de
@@ -377,11 +457,11 @@ generado está disponible en
 
 ## Conclusión esperada
 
-Poisson es la opción principal por su interpretación, parsimonia y relación
-directa entre conteos e interarribos exponenciales. El modelo Polar-lognormal es
-un contraste útil: evidencia que mantener la misma tasa media no conserva las
-rachas, la concurrencia ni la probabilidad de supervivencia. La conclusión final
-debe sustentarse en los resultados e intervalos obtenidos en cada ejecución.
+Poisson es la opción principal por interpretación, parsimonia, costo y relación
+directa entre conteos e interarribos. Polar-lognormal demuestra que mantener la
+misma media no conserva rachas, concurrencia ni supervivencia. En el escenario
+base la diferencia pareada es estadísticamente detectable, pero sigue siendo
+una conclusión condicionada por los parámetros y supuestos del sistema.
 
 ## Licencia
 

@@ -18,8 +18,10 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from scipy import stats
 
-from simulation import SimulationResult
+from simulation import GeneratorValidationResult, SimulationResult
 
 
 # Paleta compartida. Centralizar los colores garantiza correspondencia entre
@@ -536,5 +538,185 @@ def model_comparison_figure(summary: pd.DataFrame) -> go.Figure:
         title="Comparación con IC de Wilson al 95 %",
         yaxis=dict(title="Supervivencia (%)", range=[0, 108], gridcolor=GRID),
         xaxis=dict(title="Modelo de llegadas"),
+    )
+    return fig
+
+
+def generator_validation_figure(
+    validation: GeneratorValidationResult,
+    lambda_rate: float,
+    polar_cv: float,
+) -> go.Figure:
+    """Resume ajuste distributivo y conteos sin depender de una sola misión.
+
+    Los histogramas usan las muestras fijas del laboratorio. El gráfico Q-Q
+    contrasta directamente las normales producidas por Marsaglia y el panel de
+    conteos compara las frecuencias empíricas con una Poisson(lambda*T).
+    """
+
+    samples = validation.samples
+    exponential = samples["exponential"].to_numpy()
+    lognormal = samples["lognormal"].to_numpy()
+    normals = samples["normal_z"].to_numpy()
+    counts = validation.poisson_counts["count"].to_numpy()
+    fig = make_subplots(
+        rows=2,
+        cols=2,
+        subplot_titles=(
+            "Interarribos exponenciales",
+            "Interarribos Polar-lognormal",
+            "Q-Q de normales Marsaglia",
+            "Conteos Poisson repetidos",
+        ),
+        horizontal_spacing=0.12,
+        vertical_spacing=0.17,
+    )
+
+    fig.add_trace(go.Histogram(
+        x=exponential,
+        histnorm="probability density",
+        nbinsx=45,
+        marker_color=POISSON_COLOR,
+        opacity=0.68,
+        name="Exponencial observada",
+    ), row=1, col=1)
+    exp_x = np.linspace(0.0, float(np.quantile(exponential, 0.995)), 350)
+    fig.add_trace(go.Scatter(
+        x=exp_x,
+        y=lambda_rate * np.exp(-lambda_rate * exp_x),
+        mode="lines",
+        line=dict(color=ORANGE, width=3),
+        name="Exponencial teórica",
+    ), row=1, col=1)
+
+    sigma2 = math.log(1.0 + polar_cv**2)
+    sigma = math.sqrt(sigma2)
+    mu = math.log(1.0 / lambda_rate) - sigma2 / 2.0
+    log_x = np.linspace(0.001, float(np.quantile(lognormal, 0.995)), 350)
+    log_pdf = np.exp(-((np.log(log_x) - mu) ** 2) / (2.0 * sigma2))
+    log_pdf /= log_x * sigma * np.sqrt(2.0 * np.pi)
+    fig.add_trace(go.Histogram(
+        x=lognormal,
+        histnorm="probability density",
+        nbinsx=45,
+        marker_color=POLAR_COLOR,
+        opacity=0.68,
+        name="Lognormal observada",
+    ), row=1, col=2)
+    fig.add_trace(go.Scatter(
+        x=log_x,
+        y=log_pdf,
+        mode="lines",
+        line=dict(color=ORANGE, width=3),
+        name="Lognormal teórica",
+    ), row=1, col=2)
+
+    probabilities = (np.arange(len(normals)) + 0.5) / len(normals)
+    theoretical_normal = stats.norm.ppf(probabilities)
+    observed_normal = np.sort(normals)
+    limits = [
+        min(float(theoretical_normal.min()), float(observed_normal.min())),
+        max(float(theoretical_normal.max()), float(observed_normal.max())),
+    ]
+    fig.add_trace(go.Scatter(
+        x=theoretical_normal,
+        y=observed_normal,
+        mode="markers",
+        marker=dict(color=POLAR_COLOR, size=4, opacity=0.58),
+        name="Cuantiles Z",
+    ), row=2, col=1)
+    fig.add_trace(go.Scatter(
+        x=limits,
+        y=limits,
+        mode="lines",
+        line=dict(color=ORANGE, dash="dash"),
+        name="Referencia 45 grados",
+    ), row=2, col=1)
+
+    count_values, frequencies = np.unique(counts, return_counts=True)
+    empirical = frequencies / len(counts)
+    poisson_mean = float(counts.mean())
+    fig.add_trace(go.Bar(
+        x=count_values,
+        y=empirical,
+        marker_color=POISSON_COLOR,
+        opacity=0.68,
+        name="Conteo observado",
+    ), row=2, col=2)
+    fig.add_trace(go.Scatter(
+        x=count_values,
+        y=stats.poisson.pmf(count_values, poisson_mean),
+        mode="lines+markers",
+        line=dict(color=ORANGE, width=2),
+        name="PMF Poisson de referencia",
+    ), row=2, col=2)
+
+    fig.update_xaxes(title_text="Delta (s)", row=1, col=1)
+    fig.update_xaxes(title_text="Delta (s)", row=1, col=2)
+    fig.update_xaxes(title_text="Cuantil teórico", row=2, col=1)
+    fig.update_yaxes(title_text="Cuantil observado", row=2, col=1)
+    fig.update_xaxes(title_text="N(T)", row=2, col=2)
+    fig.update_yaxes(title_text="Frecuencia relativa", row=2, col=2)
+    fig.update_layout(
+        height=760,
+        barmode="overlay",
+        margin=dict(l=20, r=20, t=75, b=25),
+        paper_bgcolor=PANEL,
+        plot_bgcolor=PANEL,
+        font=dict(color=TEXT),
+        title="Auditoría visual de generadores",
+        legend=dict(orientation="h", y=1.06, x=0),
+    )
+    fig.update_xaxes(gridcolor=GRID)
+    fig.update_yaxes(gridcolor=GRID)
+    return fig
+
+
+def paired_effects_figure(effects: pd.DataFrame) -> go.Figure:
+    """Muestra efectos Poisson menos Polar con IC bootstrap del 95 %."""
+
+    labels = {
+        "survived": "Supervivencia",
+        "survival_time": "Tiempo",
+        "generated": "Llegadas",
+        "max_concurrent": "Pico activo",
+    }
+    display = effects.copy()
+    display["label"] = display["metric"].map(labels)
+    # Supervivencia se expresa en puntos porcentuales para que la unidad sea
+    # interpretable; las demás métricas conservan sus unidades naturales.
+    survival_mask = display["metric"] == "survived"
+    for column in ("difference", "ci_low", "ci_high"):
+        display.loc[survival_mask, column] *= 100.0
+    fig = go.Figure(go.Bar(
+        x=display["difference"],
+        y=display["label"],
+        orientation="h",
+        marker_color=[
+            RED if low <= 0 <= high else GREEN
+            for low, high in zip(display["ci_low"], display["ci_high"])
+        ],
+        error_x=dict(
+            type="data",
+            symmetric=False,
+            array=display["ci_high"] - display["difference"],
+            arrayminus=display["difference"] - display["ci_low"],
+        ),
+        customdata=np.column_stack((display["p_value"], display["test"])),
+        hovertemplate=(
+            "%{y}<br>Diferencia=%{x:.3f}<br>p=%{customdata[0]:.4g}"
+            "<br>%{customdata[1]}<extra></extra>"
+        ),
+    ))
+    fig.add_vline(x=0, line_color=ORANGE, line_dash="dash")
+    fig.update_layout(
+        height=390,
+        margin=dict(l=10, r=20, t=52, b=20),
+        paper_bgcolor=PANEL,
+        plot_bgcolor=PANEL,
+        font=dict(color=TEXT),
+        title="Efectos pareados: Poisson - Polar",
+        xaxis=dict(title="Diferencia en unidad de cada métrica", gridcolor=GRID),
+        yaxis=dict(title=""),
     )
     return fig

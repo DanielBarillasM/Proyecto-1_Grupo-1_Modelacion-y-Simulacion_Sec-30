@@ -1,0 +1,5 @@
+metric,poisson_mean,polar_mean,difference,ci_low,ci_high,p_value,test
+survived,0.965,1.0,-0.035,-0.055,-0.0175,0.0001220703125,McNemar exacta
+survival_time,88.52775,90.0,-1.4722500000000003,-2.3927562499999997,-0.7179874999999999,0.0009815397525216685,Wilcoxon pareada
+generated,57.1325,57.7775,-0.645,-1.57,0.2975,0.15768470402315882,Wilcoxon pareada
+max_concurrent,9.4825,6.4825,3.0,2.81,3.2,2.0029114740813763e-62,Wilcoxon pareada

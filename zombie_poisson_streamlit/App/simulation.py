@@ -24,10 +24,12 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
 from math import exp, log, sqrt
+from time import perf_counter
 from typing import Iterator, Literal, Optional
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 
 
 # A Literal catches invalid model names in static analysis while ``validate``
@@ -124,6 +126,25 @@ class SimulationResult:
     timeline: pd.DataFrame
 
 
+@dataclass
+class GeneratorValidationResult:
+    """Evidencia reproducible sobre la calidad de los generadores.
+
+    ``tests`` contiene contrastes formales con sus valores p; ``moments``
+    compara momentos teóricos y empíricos; ``samples`` conserva muestras de
+    tamaño fijo, sin censura por horizonte, para histogramas y gráficos Q-Q; y
+    ``performance`` registra medianas de tiempo de generación. Separar estas
+    tablas permite reutilizar exactamente la misma evidencia en Streamlit, el
+    informe y los scripts de figuras.
+    """
+
+    tests: pd.DataFrame
+    moments: pd.DataFrame
+    samples: pd.DataFrame
+    poisson_counts: pd.DataFrame
+    performance: pd.DataFrame
+
+
 # Ambos generadores entregan el mismo esquema. Las columnas que no aplican a un
 # modelo se rellenan con NaN; así, la interfaz puede alternar modelos sin adaptar
 # su contrato de datos.
@@ -167,6 +188,239 @@ def _lognormal_parameters(lambda_rate: float, coefficient_variation: float) -> t
 
     sigma_squared = log(1.0 + coefficient_variation**2)
     return log(1.0 / lambda_rate) - sigma_squared / 2.0, sqrt(sigma_squared)
+
+
+def sample_exponential_interarrivals(
+    lambda_rate: float,
+    sample_size: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Genera una muestra fija de interarribos exponenciales.
+
+    A diferencia del calendario limitado por una duración, esta función no
+    elimina el último interarribo que cruza el horizonte. Por eso es la entrada
+    correcta para pruebas de bondad de ajuste y comparación de momentos.
+    """
+
+    if lambda_rate <= 0 or sample_size <= 0:
+        raise ValueError("lambda_rate y sample_size deben ser positivos")
+    uniforms = rng.uniform(np.finfo(float).eps, 1.0, size=sample_size)
+    return -np.log(uniforms) / lambda_rate
+
+
+def sample_marsaglia_normals(
+    sample_size: int,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, float, int]:
+    """Obtiene normales estándar y registra la eficiencia de aceptación.
+
+    Returns:
+        Normales generadas, proporción de pares aceptados y cantidad de pares
+        propuestos. La tasa teórica de aceptación del círculo unitario es pi/4.
+    """
+
+    if sample_size <= 0:
+        raise ValueError("sample_size debe ser positivo")
+    values: list[float] = []
+    proposed_pairs = 0
+    accepted_pairs = 0
+    while len(values) < sample_size:
+        proposed_pairs += 1
+        v1, v2 = rng.uniform(-1.0, 1.0, size=2)
+        s = float(v1 * v1 + v2 * v2)
+        if not 0.0 < s < 1.0:
+            continue
+        accepted_pairs += 1
+        factor = sqrt(-2.0 * log(s) / s)
+        values.extend((float(v1 * factor), float(v2 * factor)))
+    return (
+        np.asarray(values[:sample_size], dtype=float),
+        accepted_pairs / proposed_pairs,
+        proposed_pairs,
+    )
+
+
+def sample_polar_lognormal_interarrivals(
+    lambda_rate: float,
+    coefficient_variation: float,
+    sample_size: int,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, np.ndarray, float, int]:
+    """Genera una muestra lognormal fija a partir de Marsaglia Polar."""
+
+    if lambda_rate <= 0 or sample_size <= 0:
+        raise ValueError("lambda_rate y sample_size deben ser positivos")
+    if not 0.05 <= coefficient_variation <= 2.0:
+        raise ValueError("coefficient_variation debe estar entre 0.05 y 2.0")
+    normals, acceptance_rate, proposed_pairs = sample_marsaglia_normals(sample_size, rng)
+    mu, sigma = _lognormal_parameters(lambda_rate, coefficient_variation)
+    interarrivals = np.exp(mu + sigma * normals)
+    return interarrivals, normals, acceptance_rate, proposed_pairs
+
+
+def _pearson_lag_test(values: np.ndarray) -> tuple[float, float]:
+    """Contrasta correlación lineal de rezago uno como diagnóstico de independencia."""
+
+    result = stats.pearsonr(values[:-1], values[1:])
+    return float(result.statistic), float(result.pvalue)
+
+
+def validate_arrival_generators(
+    config: SimulationConfig,
+    sample_size: int = 4_000,
+    count_repetitions: int = 600,
+    benchmark_repetitions: int = 7,
+    alpha: float = 0.05,
+) -> GeneratorValidationResult:
+    """Ejecuta bondad de ajuste, momentos, independencia y rendimiento.
+
+    Los contrastes se realizan con muestras de tamaño fijo para evitar la
+    censura de un calendario finito. El conteo Poisson sí se valida generando
+    calendarios completos repetidos, exactamente con la función usada por el
+    simulador. Los tiempos de ejecución son medianas descriptivas del equipo
+    actual y no participan en la decisión estadística.
+    """
+
+    config.validate()
+    if sample_size < 100 or count_repetitions < 30 or benchmark_repetitions < 1:
+        raise ValueError("La validación requiere muestras y repeticiones suficientes")
+
+    seed_sequence = np.random.SeedSequence(config.seed).spawn(4)
+    exponential_rng = np.random.default_rng(seed_sequence[0])
+    polar_rng = np.random.default_rng(seed_sequence[1])
+    count_rng = np.random.default_rng(seed_sequence[2])
+    benchmark_rng = np.random.default_rng(seed_sequence[3])
+
+    exponential = sample_exponential_interarrivals(
+        config.lambda_rate, sample_size, exponential_rng
+    )
+    lognormal, normals, acceptance_rate, proposed_pairs = (
+        sample_polar_lognormal_interarrivals(
+            config.lambda_rate, config.polar_cv, sample_size, polar_rng
+        )
+    )
+    mu, sigma = _lognormal_parameters(config.lambda_rate, config.polar_cv)
+
+    # Kolmogorov-Smirnov evalúa la distribución completa; Pearson con rezago
+    # uno aporta un diagnóstico explícito de independencia temporal.
+    exponential_ks = stats.kstest(
+        exponential, "expon", args=(0.0, 1.0 / config.lambda_rate)
+    )
+    normal_ks = stats.kstest(normals, "norm")
+    lognormal_ks = stats.kstest(
+        lognormal, "lognorm", args=(sigma, 0.0, exp(mu))
+    )
+    exponential_lag = _pearson_lag_test(exponential)
+    lognormal_lag = _pearson_lag_test(lognormal)
+
+    count_seeds = count_rng.integers(1, 2**31 - 1, size=count_repetitions)
+    counts = np.asarray([
+        len(generate_poisson_arrivals(
+            config.lambda_rate,
+            config.duration,
+            np.random.default_rng(int(seed)),
+        ))
+        for seed in count_seeds
+    ], dtype=float)
+    count_mean = float(counts.mean())
+    count_variance = float(counts.var(ddof=1))
+    dispersion_statistic = (count_repetitions - 1) * count_variance / count_mean
+    dispersion_cdf = float(stats.chi2.cdf(dispersion_statistic, count_repetitions - 1))
+    dispersion_p = min(1.0, 2.0 * min(dispersion_cdf, 1.0 - dispersion_cdf))
+
+    accepted_pairs = int(np.ceil(sample_size / 2))
+    acceptance_test = stats.binomtest(
+        accepted_pairs,
+        proposed_pairs,
+        p=np.pi / 4.0,
+        alternative="two-sided",
+    )
+
+    test_rows = [
+        ("Poisson-exponencial", "KS contra Exponencial", exponential_ks.statistic, exponential_ks.pvalue),
+        ("Marsaglia Polar", "KS de Z contra Normal(0,1)", normal_ks.statistic, normal_ks.pvalue),
+        ("Polar-lognormal", "KS contra Lognormal", lognormal_ks.statistic, lognormal_ks.pvalue),
+        ("Poisson-exponencial", "Correlación de rezago 1", *exponential_lag),
+        ("Polar-lognormal", "Correlación de rezago 1", *lognormal_lag),
+        ("Conteo Poisson", "Índice de dispersión", dispersion_statistic, dispersion_p),
+        ("Marsaglia Polar", "Aceptación contra pi/4", acceptance_rate, acceptance_test.pvalue),
+    ]
+    tests = pd.DataFrame(
+        test_rows, columns=["generator", "test", "statistic", "p_value"]
+    )
+    tests["alpha"] = alpha
+    tests["passes"] = tests["p_value"] >= alpha
+
+    exponential_mean = 1.0 / config.lambda_rate
+    exponential_variance = 1.0 / config.lambda_rate**2
+    lognormal_variance = (config.polar_cv * exponential_mean) ** 2
+    moments = pd.DataFrame([
+        {
+            "generator": "Poisson-exponencial",
+            "mean_theoretical": exponential_mean,
+            "mean_observed": float(exponential.mean()),
+            "variance_theoretical": exponential_variance,
+            "variance_observed": float(exponential.var(ddof=1)),
+            "cv_theoretical": 1.0,
+            "cv_observed": float(exponential.std(ddof=1) / exponential.mean()),
+        },
+        {
+            "generator": "Polar-lognormal",
+            "mean_theoretical": exponential_mean,
+            "mean_observed": float(lognormal.mean()),
+            "variance_theoretical": lognormal_variance,
+            "variance_observed": float(lognormal.var(ddof=1)),
+            "cv_theoretical": config.polar_cv,
+            "cv_observed": float(lognormal.std(ddof=1) / lognormal.mean()),
+        },
+        {
+            "generator": "Marsaglia Normal",
+            "mean_theoretical": 0.0,
+            "mean_observed": float(normals.mean()),
+            "variance_theoretical": 1.0,
+            "variance_observed": float(normals.var(ddof=1)),
+            "cv_theoretical": float("nan"),
+            "cv_observed": float("nan"),
+        },
+    ])
+
+    # El benchmark usa tamaños idénticos y generadores nuevos en cada repetición.
+    benchmark_rows: list[dict[str, float | int | str]] = []
+    for model in ("Poisson-exponencial", "Polar-lognormal"):
+        elapsed: list[float] = []
+        for _ in range(benchmark_repetitions):
+            local_seed = int(benchmark_rng.integers(1, 2**31 - 1))
+            local_rng = np.random.default_rng(local_seed)
+            start = perf_counter()
+            if model == "Poisson-exponencial":
+                sample_exponential_interarrivals(config.lambda_rate, sample_size, local_rng)
+            else:
+                sample_polar_lognormal_interarrivals(
+                    config.lambda_rate, config.polar_cv, sample_size, local_rng
+                )
+            elapsed.append((perf_counter() - start) * 1_000.0)
+        median_ms = float(np.median(elapsed))
+        benchmark_rows.append({
+            "generator": model,
+            "sample_size": sample_size,
+            "repetitions": benchmark_repetitions,
+            "median_ms": median_ms,
+            "microseconds_per_value": median_ms * 1_000.0 / sample_size,
+        })
+
+    samples = pd.DataFrame({
+        "exponential": exponential,
+        "lognormal": lognormal,
+        "normal_z": normals,
+    })
+    poisson_counts = pd.DataFrame({"count": counts.astype(int)})
+    return GeneratorValidationResult(
+        tests=tests,
+        moments=moments,
+        samples=samples,
+        poisson_counts=poisson_counts,
+        performance=pd.DataFrame(benchmark_rows),
+    )
 
 
 def generate_poisson_arrivals(
@@ -344,13 +598,29 @@ def simulate(config: SimulationConfig, keep_timeline: bool = True) -> Simulation
     spawn_cursor = 0
     active: list[int] = []
     time = 0.0
-    next_sample = 0.0
+    next_sample = 0.5
     timeline_rows: list[dict[str, float | int]] = []
     survived = False
 
+    if keep_timeline:
+        # Registrar el estado inicial evita etiquetar como t=0 un estado que ya
+        # recibió daño durante el primer paso numérico.
+        timeline_rows.append({
+            "time": 0.0,
+            "player_hp": player_hp,
+            "active_enemies": 0,
+            "spawned": 0,
+            "eliminated": 0,
+            "incoming_dps": 0.0,
+        })
+
     # ``active`` contiene índices, no copias de diccionarios. Esto reduce el
     # costo del bucle respecto a revisar todo el calendario en cada paso dt.
-    while True:
+    while time < config.duration - 1e-12 and player_hp > 0:
+        # El último intervalo puede ser menor que dt. Esta cota impide aplicar
+        # daño o ataques después del horizonte [0, T].
+        step = min(config.dt, config.duration - time)
+
         # Fase 1: materializar todas las llegadas ocurridas desde el paso previo.
         while spawn_cursor < len(enemies) and float(enemies[spawn_cursor]["spawn_time"]) <= time + 1e-12:
             active.append(spawn_cursor)
@@ -378,10 +648,10 @@ def simulate(config: SimulationConfig, keep_timeline: bool = True) -> Simulation
         # Fase 3: el protagonista concentra todo su DPS en un único objetivo.
         if target_idx is not None:
             enemy = enemies[target_idx]
-            enemy["hp"] = max(0.0, float(enemy["hp"]) - config.player_dps * config.dt)
+            enemy["hp"] = max(0.0, float(enemy["hp"]) - config.player_dps * step)
             if float(enemy["hp"]) <= 0:
                 enemy["killed"] = True
-                enemy["death_time"] = min(time + config.dt, config.duration)
+                enemy["death_time"] = min(time + step, config.duration)
                 eliminated += 1
 
         # Fase 4: enemigos de contacto que sobrevivieron al disparo dañan en
@@ -389,29 +659,29 @@ def simulate(config: SimulationConfig, keep_timeline: bool = True) -> Simulation
         incoming_dps = sum(
             float(enemies[idx]["dps"]) for idx in attackers if not bool(enemies[idx]["killed"])
         )
-        player_hp = max(0.0, player_hp - incoming_dps * config.dt)
-        mission_finished = time >= config.duration - 1e-12
+        player_hp = max(0.0, player_hp - incoming_dps * step)
+        new_time = min(round(time + step, 10), config.duration)
+        mission_finished = new_time >= config.duration - 1e-12
         player_fell = player_hp <= 0
 
         # La telemetría se reduce a 2 Hz para mantener pequeños los DataFrames y
-        # las gráficas. El estado terminal siempre se registra.
-        if keep_timeline and (time >= next_sample - 1e-12 or mission_finished or player_fell):
+        # las gráficas. Cada fila representa el estado al final del intervalo.
+        if keep_timeline and (
+            new_time >= next_sample - 1e-12 or mission_finished or player_fell
+        ):
             timeline_rows.append({
-                "time": round(time, 4),
+                "time": round(new_time, 4),
                 "player_hp": player_hp,
                 "active_enemies": sum(not bool(enemies[idx]["killed"]) for idx in active),
                 "spawned": spawn_cursor,
                 "eliminated": eliminated,
                 "incoming_dps": incoming_dps,
             })
-            next_sample += 0.5
+            while next_sample <= new_time + 1e-12:
+                next_sample += 0.5
+        time = new_time
 
-        if player_fell:
-            break
-        if mission_finished:
-            survived = True
-            break
-        time = min(round(time + config.dt, 10), config.duration)
+    survived = player_hp > 0 and time >= config.duration - 1e-12
 
     # Separar calendario y eventos realmente ocurridos corrige el caso en que el
     # jugador muere antes de T y el proceso tenía apariciones futuras planeadas.
@@ -448,6 +718,9 @@ def simulate(config: SimulationConfig, keep_timeline: bool = True) -> Simulation
         remaining=remaining,
         max_concurrent=max_concurrent,
         mean_interarrival=mean_interarrival,
+        # lambda*t es E[N(t)] exacto para Poisson. En una renovación lognormal
+        # finita funciona únicamente como referencia de tasa, no como esperanza
+        # exacta del conteo; la interfaz distingue ambos casos.
         expected_arrivals=config.lambda_rate * survival_time,
         expected_schedule=config.lambda_rate * config.duration,
         arrivals=actual_arrivals,
@@ -579,6 +852,103 @@ def compare_arrival_models(
         batches.append(batch)
         summaries.append(summarize_batch(batch, model))
     return pd.concat(batches, ignore_index=True), pd.DataFrame(summaries)
+
+
+def paired_comparison_statistics(
+    trials: pd.DataFrame,
+    bootstrap_repetitions: int = 4_000,
+    confidence: float = 0.95,
+    seed: int = 91_337,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Cuantifica diferencias pareadas entre Poisson y Polar-lognormal.
+
+    La dirección de todos los efectos es Poisson menos Polar. Supervivencia usa
+    la prueba exacta de McNemar porque la respuesta es binaria y las partidas
+    comparten índice de corrida. Las métricas continuas usan Wilcoxon pareado.
+    En todos los casos el intervalo del efecto se obtiene con bootstrap de pares,
+    conservando juntos los dos resultados pertenecientes a una corrida.
+    """
+
+    required = {
+        "run", "model", "survived", "survival_time", "generated", "max_concurrent"
+    }
+    missing = required.difference(trials.columns)
+    if missing:
+        raise ValueError(f"Faltan columnas para el análisis pareado: {sorted(missing)}")
+    if bootstrap_repetitions < 200:
+        raise ValueError("bootstrap_repetitions debe ser al menos 200")
+    if not 0.80 <= confidence < 1.0:
+        raise ValueError("confidence debe pertenecer a [0.80, 1.0)")
+
+    ordered = trials.sort_values(["run", "model"])
+    if set(ordered["model"]) != {"poisson", "polar"}:
+        raise ValueError("Se requieren observaciones de Poisson y Polar")
+
+    alpha = 1.0 - confidence
+    rng = np.random.default_rng(seed)
+    effect_rows: list[dict[str, float | str]] = []
+    paired_values: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    for metric in ("survived", "survival_time", "generated", "max_concurrent"):
+        pivot = ordered.pivot(index="run", columns="model", values=metric).dropna()
+        if len(pivot) == 0:
+            raise ValueError(f"No existen pares completos para {metric}")
+        poisson = pivot["poisson"].to_numpy(dtype=float)
+        polar = pivot["polar"].to_numpy(dtype=float)
+        paired_values[metric] = (poisson, polar)
+
+    survival_poisson, survival_polar = paired_values["survived"]
+    poisson_only = int(np.sum((survival_poisson == 1) & (survival_polar == 0)))
+    polar_only = int(np.sum((survival_poisson == 0) & (survival_polar == 1)))
+    discordant = poisson_only + polar_only
+    mcnemar_p = (
+        float(stats.binomtest(poisson_only, discordant, p=0.5).pvalue)
+        if discordant
+        else 1.0
+    )
+
+    for metric, (poisson, polar) in paired_values.items():
+        differences = poisson - polar
+        indices = rng.integers(
+            0, len(differences), size=(bootstrap_repetitions, len(differences))
+        )
+        boot_means = differences[indices].mean(axis=1)
+        ci_low, ci_high = np.quantile(
+            boot_means, [alpha / 2.0, 1.0 - alpha / 2.0]
+        )
+        if metric == "survived":
+            p_value = mcnemar_p
+            test_name = "McNemar exacta"
+        elif np.allclose(differences, 0.0):
+            p_value = 1.0
+            test_name = "Wilcoxon pareada"
+        else:
+            p_value = float(
+                stats.wilcoxon(
+                    differences,
+                    zero_method="wilcox",
+                    alternative="two-sided",
+                    method="auto",
+                ).pvalue
+            )
+            test_name = "Wilcoxon pareada"
+        effect_rows.append({
+            "metric": metric,
+            "poisson_mean": float(poisson.mean()),
+            "polar_mean": float(polar.mean()),
+            "difference": float(differences.mean()),
+            "ci_low": float(ci_low),
+            "ci_high": float(ci_high),
+            "p_value": p_value,
+            "test": test_name,
+        })
+
+    contingency = pd.DataFrame([
+        {"outcome": "Ambos sobreviven", "count": int(np.sum((survival_poisson == 1) & (survival_polar == 1)))},
+        {"outcome": "Solo Poisson sobrevive", "count": poisson_only},
+        {"outcome": "Solo Polar sobrevive", "count": polar_only},
+        {"outcome": "Ambos fallan", "count": int(np.sum((survival_poisson == 0) & (survival_polar == 0)))},
+    ])
+    return pd.DataFrame(effect_rows), contingency
 
 
 def survival_curve(
