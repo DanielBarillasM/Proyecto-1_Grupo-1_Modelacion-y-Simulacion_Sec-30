@@ -312,6 +312,8 @@ Proyecto-1_Grupo-1_Modelacion-y-Simulacion_Sec-30/
     |   `-- report-*.png
     |-- presentation/
     |   |-- vendor/mathjax/
+    |   |-- ficha_repositorio.docx
+    |   |-- ficha_repositorio.pdf
     |   `-- presentacion.html
     |-- report/
     |   |-- data/
@@ -415,6 +417,13 @@ Start-Process .\presentation\presentacion.html
 
 Use las flechas izquierda/derecha, `Page Up`, `Page Down`, la barra espaciadora
 o los controles en pantalla para navegar.
+
+### Ficha técnica del repositorio
+
+La ficha editable [`ficha_repositorio.docx`](zombie_poisson_streamlit/presentation/ficha_repositorio.docx)
+presenta el propósito, modelos, arquitectura, instalación, resultados,
+entregables e integrantes. Incluye enlaces activos tanto a la página web como
+a la URL de clonación del repositorio..
 
 ### Informe LaTeX
 
