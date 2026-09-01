@@ -29,12 +29,19 @@ if str(APP_DIR) not in sys.path:
 
 from simulation import (
     ARRIVAL_COLUMNS,
+    COUNTER_PARAMETERS,
+    MINSTD_PARAMETERS,
+    LinearCongruentialGenerator,
     SimulationConfig,
+    _poisson_count_chi_square,
     compare_arrival_models,
+    estimate_polar_acceptance,
     generate_poisson_arrivals,
     generate_polar_arrivals,
+    holm_adjusted_p_values,
     paired_comparison_statistics,
     simulate,
+    uniform_source_tests,
     validate_arrival_generators,
     wilson_interval,
 )
@@ -78,17 +85,52 @@ class ArrivalGenerationTests(unittest.TestCase):
     def test_formal_validation_accepts_reference_generators(self) -> None:
         # Una semilla fija convierte la auditoría estadística en una prueba de
         # regresión reproducible sin sustituir la interpretación de valores p.
+        # El criterio es la columna corregida por Holm: con dieciocho contrastes
+        # simultáneos, exigir que ninguno baje de 0.05 sería exigir suerte.
         validation = validate_arrival_generators(
             SimulationConfig(seed=22193),
             sample_size=2_000,
             count_repetitions=300,
             benchmark_repetitions=1,
         )
-        self.assertTrue(bool(validation.tests["passes"].all()))
-        self.assertEqual(len(validation.tests), 7)
+        self.assertTrue(bool(validation.tests["passes_holm"].all()))
+        self.assertEqual(len(validation.tests), 18)
         self.assertEqual(set(validation.moments["generator"]), {
-            "Poisson-exponencial", "Polar-lognormal", "Marsaglia Normal"
+            "Poisson-exponencial", "Polar-lognormal", "Marsaglia Normal",
+            "Fuente uniforme PCG64", "LCG propio (MINSTD)",
         })
+
+    def test_no_two_contrasts_report_the_same_statistic(self) -> None:
+        # Regresión del defecto corregido: el KS contra la lognormal devolvía
+        # exactamente el mismo estadístico que el KS de Z, porque KS es
+        # invariante ante la transformación monótona que las relaciona.
+        validation = validate_arrival_generators(
+            SimulationConfig(seed=22193),
+            sample_size=2_000,
+            count_repetitions=300,
+            benchmark_repetitions=1,
+        )
+        statistics = validation.tests["statistic"].round(12)
+        self.assertFalse(bool(statistics.duplicated().any()))
+        self.assertNotIn("KS contra Lognormal", set(validation.tests["test"]))
+
+    def test_negative_control_is_reported_outside_the_main_table(self) -> None:
+        # El control negativo debe fallar; mezclarlo con la tabla principal
+        # convertiría una demostración de potencia en un contraste rechazado.
+        validation = validate_arrival_generators(
+            SimulationConfig(seed=22193),
+            sample_size=2_000,
+            count_repetitions=300,
+            benchmark_repetitions=1,
+        )
+        self.assertNotIn(
+            "LCG degenerado (control negativo)", set(validation.tests["generator"])
+        )
+        self.assertFalse(bool(validation.uniform_control["passes"].all()))
+        self.assertEqual(
+            set(validation.uniform_samples.columns),
+            {"pcg64", "lcg_minstd", "lcg_degenerate"},
+        )
 
 
 class SimulationTests(unittest.TestCase):
@@ -197,6 +239,69 @@ class SimulationTests(unittest.TestCase):
             contingency["outcome"] == "Solo Polar sobrevive", "count"
         ].iloc[0]
         self.assertEqual(int(polar_only), 3)
+
+
+class UniformSourceTests(unittest.TestCase):
+    """Audita la fuente uniforme, que es la entrada de todos los métodos."""
+
+    def test_own_lcg_is_reproducible_and_stays_in_the_unit_interval(self) -> None:
+        first = LinearCongruentialGenerator(*MINSTD_PARAMETERS, seed=4321).uniforms(500)
+        second = LinearCongruentialGenerator(*MINSTD_PARAMETERS, seed=4321).uniforms(500)
+        self.assertTrue(np.array_equal(first, second))
+        self.assertTrue(((first >= 0.0) & (first < 1.0)).all())
+
+    def test_battery_accepts_the_reference_source(self) -> None:
+        values = np.random.default_rng(515).uniform(0.0, 1.0, size=4_000)
+        rows = uniform_source_tests(values, "PCG64")
+        self.assertEqual(len(rows), 5)
+        self.assertTrue(all(row[3] >= 0.05 for row in rows))
+
+    def test_battery_separates_uniformity_from_independence(self) -> None:
+        # El contador recorre su período en orden: es perfectamente uniforme y
+        # perfectamente predecible. Si la batería tuviera potencia solo para la
+        # forma marginal, este generador la aprobaría entera.
+        values = LinearCongruentialGenerator(*COUNTER_PARAMETERS, seed=7).uniforms(4_000)
+        results = {row[1]: row[3] for row in uniform_source_tests(values, "Contador")}
+        self.assertGreaterEqual(results["Ji-cuadrada de uniformidad"], 0.05)
+        self.assertGreaterEqual(results["KS contra U(0,1)"], 0.05)
+        self.assertLess(results["Rachas arriba/abajo"], 0.001)
+        self.assertLess(results["Ljung-Box rezagos 1-5"], 0.001)
+        self.assertLess(results["Serial de tercias en el cubo"], 0.001)
+
+
+class MultiplicityAndCountTests(unittest.TestCase):
+    """Comprueba la corrección por familia y la bondad de ajuste del conteo."""
+
+    def test_holm_matches_the_manual_computation(self) -> None:
+        # Con m = 4 los factores son 4, 3, 2 y 1 sobre los valores ordenados:
+        # 0.01*4 = 0.04, 0.03*3 = 0.09 y 0.04*2 = 0.08. La acumulación por
+        # máximo eleva ese 0.08 hasta 0.09 para que el ajuste no invierta el
+        # orden original de los valores p.
+        adjusted = holm_adjusted_p_values(np.array([0.01, 0.04, 0.03, 0.60]))
+        np.testing.assert_allclose(adjusted, [0.04, 0.09, 0.09, 0.60], atol=1e-12)
+
+    def test_holm_never_exceeds_one_and_preserves_order(self) -> None:
+        raw = np.array([0.2, 0.5, 0.9, 0.02, 0.33])
+        adjusted = holm_adjusted_p_values(raw)
+        self.assertTrue((adjusted <= 1.0).all())
+        self.assertTrue((adjusted >= raw).all())
+
+    def test_fixed_proposal_design_recovers_the_circle_acceptance(self) -> None:
+        accepted, proposed = estimate_polar_acceptance(
+            20_000, np.random.default_rng(63)
+        )
+        self.assertEqual(proposed, 20_000)
+        self.assertAlmostEqual(accepted / proposed, np.pi / 4.0, delta=0.01)
+
+    def test_count_chi_square_detects_a_wrong_mean(self) -> None:
+        # La prueba debe aceptar la media correcta y rechazar una desplazada;
+        # sin esa segunda mitad no habría evidencia de que tiene potencia.
+        counts = np.random.default_rng(404).poisson(58.5, size=600).astype(float)
+        _, correct_p, degrees = _poisson_count_chi_square(counts, 58.5)
+        _, shifted_p, _ = _poisson_count_chi_square(counts, 66.0)
+        self.assertGreaterEqual(correct_p, 0.05)
+        self.assertLess(shifted_p, 0.01)
+        self.assertGreater(degrees, 2)
 
 
 class ConfidenceIntervalTests(unittest.TestCase):

@@ -504,11 +504,24 @@ with validation_tab:
     section_header("Control de calidad estadístico", "¿Generamos las distribuciones declaradas?")
     st.markdown(
         """
-        La auditoría combina pruebas de Kolmogorov--Smirnov, correlación de
-        rezago uno, dispersión del conteo Poisson y tasa de aceptación de
-        Marsaglia. Se adopta un nivel de significancia de 5 %. No rechazar una
-        hipótesis no demuestra perfección; indica que la muestra no contradice
-        el modelo teórico bajo el contraste utilizado.
+        La auditoría recorre la cadena en el mismo orden en que se construyen
+        las variables. **Primero la fuente uniforme**, porque tanto la transformada
+        inversa como Marsaglia Polar son funciones de uniformes y un defecto ahí
+        contamina todo lo demás: se contrastan forma marginal, discrepancia máxima,
+        orden secuencial, correlación conjunta y estructura en el cubo, tanto sobre
+        PCG64 como sobre un LCG propio. **Después las transformaciones** y, por
+        último, **el conteo del calendario**.
+
+        Ningún contraste repite la evidencia de otro. En particular no se prueba la
+        bondad de ajuste de la lognormal: Kolmogorov--Smirnov es invariante ante
+        transformaciones monótonas, así que devolvería exactamente el mismo número
+        que el KS de `Z`. Lo que ese KS no puede ver —si la parametrización cumple
+        `E[Delta] = 1/lambda`— se contrasta aparte con la media.
+
+        Con una familia de este tamaño, leer solo el valor p nominal produciría
+        rechazos por azar con probabilidad cercana al 60 %. La decisión se toma
+        sobre la columna corregida por Holm. No rechazar no demuestra perfección;
+        indica que la muestra no contradice el modelo bajo el contraste utilizado.
         """
     )
     sample_col, count_col = st.columns(2)
@@ -548,10 +561,15 @@ with validation_tab:
         st.warning("Cambió la configuración del laboratorio. Ejecuta nuevamente.")
     else:
         validation = validation_saved["validation"]
-        passed = int(validation.tests["passes"].sum())
+        passed = int(validation.tests["passes_holm"].sum())
+        passed_nominal = int(validation.tests["passes"].sum())
         total = len(validation.tests)
         validation_metrics = st.columns(4)
-        validation_metrics[0].metric("Contrastes no rechazados", f"{passed}/{total}")
+        validation_metrics[0].metric(
+            "No rechazados (Holm)",
+            f"{passed}/{total}",
+            f"{passed_nominal}/{total} sin corregir",
+        )
         validation_metrics[1].metric(
             "Media exponencial",
             f"{validation.moments.iloc[0]['mean_observed']:.3f} s",
@@ -571,11 +589,14 @@ with validation_tab:
         validation_metrics[3].metric("Costo Polar", f"{polar_speed:.2f} us/valor")
         if passed == total:
             st.success(
-                "Con alpha=0.05, ninguno de los siete contrastes rechaza el comportamiento esperado."
+                f"Con alpha=0.05 corregido por Holm, ninguno de los {total} contrastes "
+                "rechaza el comportamiento esperado de los generadores."
             )
         else:
             st.warning(
-                "Al menos un contraste fue rechazado. Revisa el valor p y repite con otra semilla antes de concluir."
+                "Al menos un contraste fue rechazado tras la corrección por multiplicidad. "
+                "Revisa el valor p ajustado y el generador implicado antes de concluir; "
+                "cambiar de semilla hasta que ninguno falle no es un método válido."
             )
 
         st.plotly_chart(
@@ -587,16 +608,55 @@ with validation_tab:
         )
         tests_display = validation.tests.copy()
         tests_display.columns = [
-            "Generador", "Contraste", "Estadístico", "Valor p", "Alpha", "No se rechaza"
+            "Generador", "Contraste", "Estadístico", "Valor p", "Alpha",
+            "No se rechaza", "Valor p (Holm)", "No se rechaza (Holm)",
         ]
         st.dataframe(
             tests_display.style.format({
                 "Estadístico": "{:.5f}",
                 "Valor p": "{:.5f}",
                 "Alpha": "{:.2f}",
+                "Valor p (Holm)": "{:.5f}",
             }),
             width="stretch",
             hide_index=True,
+        )
+
+        st.markdown("### Control negativo: uniformidad no es aleatoriedad")
+        st.markdown(
+            """
+            Una batería que solo aprueba generadores buenos no demuestra nada
+            mientras no se compruebe que también reprueba a los malos. El control
+            es un contador `x = (x + 1) mod m`: recorre su período completo, así
+            que su histograma es exactamente plano y su ajuste a la uniforme es
+            perfecto. Y aun así es totalmente predecible. Se reporta fuera de la
+            tabla principal porque se espera que falle; incluirlo ahí inflaría
+            artificialmente el número de contrastes rechazados.
+            """
+        )
+        control_display = validation.uniform_control.copy()
+        control_display.columns = [
+            "Generador", "Contraste", "Estadístico", "Valor p", "Alpha", "No se rechaza"
+        ]
+        st.dataframe(
+            control_display.style.format({
+                "Estadístico": "{:.5f}",
+                "Valor p": "{:.2e}",
+                "Alpha": "{:.2f}",
+            }),
+            width="stretch",
+            hide_index=True,
+        )
+        shape_survivors = int(
+            validation.uniform_control["passes"].iloc[:2].sum()
+        )
+        st.markdown(
+            f'<div class="callout amber"><b>Lectura del control</b><br>'
+            f'El contador aprueba {shape_survivors} de los 2 contrastes de forma y '
+            f'fracasa en los 3 de dependencia. Esa asimetría es la justificación de '
+            f'por qué la validación no se agota en un histograma: la forma marginal '
+            f'y la independencia son propiedades distintas y exigen pruebas distintas.</div>',
+            unsafe_allow_html=True,
         )
         details_left, details_right = st.columns(2)
         with details_left:

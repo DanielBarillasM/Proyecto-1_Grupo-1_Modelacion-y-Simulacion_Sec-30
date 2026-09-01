@@ -1,0 +1,6 @@
+generator,test,statistic,p_value,alpha,passes
+LCG degenerado (control negativo),Ji-cuadrada de uniformidad,3.8399999999999994,0.9999225310793588,0.05,True
+LCG degenerado (control negativo),"KS contra U(0,1)",0.0020000000000000018,1.0,0.05,True
+LCG degenerado (control negativo),Rachas arriba/abajo,-99.3725166368023,0.0,0.05,False
+LCG degenerado (control negativo),Ljung-Box rezagos 1-5,18606.84718446648,0.0,0.05,False
+LCG degenerado (control negativo),Serial de tercias en el cubo,19299.822205551387,0.0,0.05,False

@@ -84,14 +84,22 @@ def save_figure(fig: plt.Figure, filename: str) -> None:
 
 
 def plot_generator_validation(validation, config: SimulationConfig) -> None:
-    """Crea cuatro diagnósticos sobre muestras no censuradas."""
+    """Crea seis diagnósticos sobre muestras no censuradas.
+
+    Las dos primeras filas cubren las transformaciones y el conteo. La tercera
+    audita la fuente uniforme y contrapone forma marginal contra estructura
+    secuencial, que es la distinción sobre la que descansa toda la batería.
+    """
 
     exponential = validation.samples["exponential"].to_numpy()
     lognormal = validation.samples["lognormal"].to_numpy()
     normals = validation.samples["normal_z"].to_numpy()
     counts = validation.poisson_counts["count"].to_numpy()
-    fig, axes = plt.subplots(2, 2, figsize=(13.5, 8.2))
-    fig.suptitle("Validación estadística de los generadores", fontsize=18, y=0.99)
+    reference_uniforms = validation.uniform_samples["pcg64"].to_numpy()
+    own_uniforms = validation.uniform_samples["lcg_minstd"].to_numpy()
+    degenerate_uniforms = validation.uniform_samples["lcg_degenerate"].to_numpy()
+    fig, axes = plt.subplots(3, 2, figsize=(13.5, 12.4))
+    fig.suptitle("Validación estadística de los generadores", fontsize=18, y=0.995)
 
     ax = axes[0, 0]
     ax.hist(exponential, bins=42, density=True, color=POISSON, alpha=0.72)
@@ -135,6 +143,25 @@ def plot_generator_validation(validation, config: SimulationConfig) -> None:
         lw=2,
     )
     ax.set(title="Conteo Poisson en calendarios repetidos", xlabel="N(T)", ylabel="Frecuencia")
+
+    ax = axes[2, 0]
+    ax.hist(reference_uniforms, bins=20, range=(0, 1), density=True,
+            color=POISSON, alpha=0.6, label="PCG64")
+    ax.hist(own_uniforms, bins=20, range=(0, 1), density=True,
+            color=POLAR, alpha=0.55, label="LCG propio")
+    ax.axhline(1.0, color=ORANGE, lw=2.4)
+    ax.legend(loc="lower right", fontsize=8, facecolor=PANEL, edgecolor=GRID, labelcolor=TEXT)
+    ax.set(title="Fuente uniforme: forma marginal", xlabel="u", ylabel="Densidad")
+
+    # El diagrama de rezago uno separa lo que el histograma confunde: el control
+    # degenerado es plano en una dimensión y una recta en dos.
+    ax = axes[2, 1]
+    ax.scatter(own_uniforms[:-1], own_uniforms[1:], s=4, color=POLAR,
+               alpha=0.35, label="LCG propio")
+    ax.scatter(degenerate_uniforms[:-1], degenerate_uniforms[1:], s=4, color=RED,
+               alpha=0.75, label="Control degenerado")
+    ax.legend(loc="lower right", fontsize=8, facecolor=PANEL, edgecolor=GRID, labelcolor=TEXT)
+    ax.set(title="Fuente uniforme: diagrama de rezago 1", xlabel="u(n)", ylabel="u(n+1)")
 
     for axis in axes.flat:
         axis.grid(True, axis="y")
@@ -248,8 +275,10 @@ def latex_number(value: float, decimals: int = 4) -> str:
 def latex_pvalue(value: float) -> str:
     """Conserva valores p muy pequeños mediante notación científica LaTeX."""
 
-    if value == 0:
-        return "0"
+    # Un cero exacto es subdesbordamiento, no una probabilidad nula: se declara
+    # como cota. Un valor pequeño pero representable conserva su magnitud.
+    if value <= 0.0:
+        return "<10^{-16}"
     if value < 0.0001:
         exponent = int(np.floor(np.log10(value)))
         mantissa = value / (10**exponent)
@@ -264,18 +293,30 @@ def write_generated_results(validation, summary, effects, contingency) -> None:
     polar = summary.loc[summary["model"] == "polar"].iloc[0]
     survival = effects.loc[effects["metric"] == "survived"].iloc[0]
     peak = effects.loc[effects["metric"] == "max_concurrent"].iloc[0]
-    exp_ks = validation.tests.loc[
-        validation.tests["test"] == "KS contra Exponencial"
-    ].iloc[0]
-    log_ks = validation.tests.loc[
-        validation.tests["test"] == "KS contra Lognormal"
-    ].iloc[0]
-    normal_ks = validation.tests.loc[
-        validation.tests["test"] == "KS de Z contra Normal(0,1)"
-    ].iloc[0]
-    count_test = validation.tests.loc[
-        validation.tests["test"] == "Índice de dispersión"
-    ].iloc[0]
+
+
+    def contrast(generator: str, name: str):
+        """Localiza una fila por generador y contraste, sin depender del orden."""
+
+        rows = validation.tests
+        selected = rows.loc[
+            (rows["generator"] == generator) & (rows["test"] == name)
+        ]
+        if selected.empty:
+            raise KeyError(f"No existe el contraste {generator} / {name}")
+        return selected.iloc[0]
+
+    exp_ks = contrast("Poisson-exponencial", "KS contra Exponencial")
+    normal_ks = contrast("Marsaglia Polar", "KS de Z contra Normal(0,1)")
+    acceptance = contrast("Marsaglia Polar", "Aceptación contra pi/4")
+    lognormal_mean = contrast("Polar-lognormal", "Media contra 1/lambda")
+    count_test = contrast("Conteo Poisson", "Índice de dispersión")
+    count_chi = contrast("Conteo Poisson", "Ji-cuadrada contra pmf Poisson")
+    uniform_ks = contrast("Fuente uniforme PCG64", "KS contra U(0,1)")
+    uniform_serial = contrast("Fuente uniforme PCG64", "Serial de tercias en el cubo")
+    lcg_ks = contrast("LCG propio (MINSTD)", "KS contra U(0,1)")
+    lcg_serial = contrast("LCG propio (MINSTD)", "Serial de tercias en el cubo")
+    control = validation.uniform_control.set_index("test")["p_value"]
     poisson_perf = validation.performance.loc[
         validation.performance["generator"] == "Poisson-exponencial"
     ].iloc[0]
@@ -301,10 +342,24 @@ def write_generated_results(validation, summary, effects, contingency) -> None:
         f"\\newcommand{{\\McNemarP}}{{{latex_pvalue(float(survival['p_value']))}}}",
         f"\\newcommand{{\\PeakDifference}}{{{peak['difference']:.3f}}}",
         f"\\newcommand{{\\PeakP}}{{{latex_pvalue(float(peak['p_value']))}}}",
+        f"\\newcommand{{\\TestCount}}{{{len(validation.tests)}}}",
+        f"\\newcommand{{\\SmallestNominalP}}{{{latex_number(float(validation.tests['p_value'].min()))}}}",
         f"\\newcommand{{\\ExponentialKSP}}{{{latex_number(float(exp_ks['p_value']))}}}",
-        f"\\newcommand{{\\LognormalKSP}}{{{latex_number(float(log_ks['p_value']))}}}",
         f"\\newcommand{{\\NormalKSP}}{{{latex_number(float(normal_ks['p_value']))}}}",
+        f"\\newcommand{{\\AcceptanceRate}}{{{float(acceptance['statistic']):.4f}}}",
+        f"\\newcommand{{\\AcceptanceP}}{{{latex_number(float(acceptance['p_value']))}}}",
+        f"\\newcommand{{\\LognormalMeanP}}{{{latex_number(float(lognormal_mean['p_value']))}}}",
         f"\\newcommand{{\\CountDispersionP}}{{{latex_number(float(count_test['p_value']))}}}",
+        f"\\newcommand{{\\CountChiP}}{{{latex_number(float(count_chi['p_value']))}}}",
+        f"\\newcommand{{\\UniformKSP}}{{{latex_number(float(uniform_ks['p_value']))}}}",
+        f"\\newcommand{{\\UniformSerialP}}{{{latex_number(float(uniform_serial['p_value']))}}}",
+        f"\\newcommand{{\\LcgKSP}}{{{latex_number(float(lcg_ks['p_value']))}}}",
+        f"\\newcommand{{\\LcgSerialP}}{{{latex_number(float(lcg_serial['p_value']))}}}",
+        f"\\newcommand{{\\ControlUniformityP}}{{{latex_number(float(control['Ji-cuadrada de uniformidad']))}}}",
+        f"\\newcommand{{\\ControlKSP}}{{{latex_number(float(control['KS contra U(0,1)']))}}}",
+        f"\\newcommand{{\\ControlRunsP}}{{{latex_pvalue(float(control['Rachas arriba/abajo']))}}}",
+        f"\\newcommand{{\\ControlLjungP}}{{{latex_pvalue(float(control['Ljung-Box rezagos 1-5']))}}}",
+        f"\\newcommand{{\\ControlSerialP}}{{{latex_pvalue(float(control['Serial de tercias en el cubo']))}}}",
         f"\\newcommand{{\\PoissonMicros}}{{{float(poisson_perf['microseconds_per_value']):.3f}}}",
         f"\\newcommand{{\\PolarMicros}}{{{float(polar_perf['microseconds_per_value']):.3f}}}",
         f"\\newcommand{{\\BothSurvive}}{{{int(contingency.iloc[0]['count'])}}}",
@@ -331,6 +386,7 @@ def main() -> None:
     validation.tests.to_csv(DATA_DIR / "generator_tests.csv", index=False)
     validation.moments.to_csv(DATA_DIR / "generator_moments.csv", index=False)
     validation.performance.to_csv(DATA_DIR / "generator_performance.csv", index=False)
+    validation.uniform_control.to_csv(DATA_DIR / "uniform_control.csv", index=False)
     trials.to_csv(DATA_DIR / "paired_trials.csv", index=False)
     summary.to_csv(DATA_DIR / "comparison_summary.csv", index=False)
     effects.to_csv(DATA_DIR / "paired_effects.csv", index=False)

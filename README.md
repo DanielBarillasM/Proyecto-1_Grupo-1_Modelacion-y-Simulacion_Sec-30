@@ -49,7 +49,7 @@ La investigación se apoya en cuatro pilares:
 | Modelación probabilística | Proceso de Poisson e interarribos exponenciales |
 | Modelo de contraste | Proceso de renovación lognormal generado con Marsaglia polar |
 | Simulación computacional | Motor discreto con paso temporal configurable |
-| Validación | KS, independencia, dispersión, aceptación y benchmark |
+| Validación | Fuente uniforme, LCG propio, KS, independencia, dispersión, aceptación, Holm y benchmark |
 | Inferencia y comunicación | Wilson, McNemar, Wilcoxon, bootstrap, gráficas y escena 3D |
 
 > **Pregunta central:** ¿cómo cambia la supervivencia cuando aumenta la tasa de
@@ -198,20 +198,73 @@ una corrida.
 ## Validación formal de los generadores
 
 El laboratorio utiliza muestras de tamaño fijo, independientes del horizonte de
-una misión. Con $\alpha=0.05$ ejecuta siete controles:
+una misión, y recorre los tres niveles en que se construye una variable
+aleatoria. Con $\alpha=0.05$ ejecuta 18 contrastes.
+
+**Nivel 1. La fuente uniforme.** Es la entrada de todos los métodos: si falla,
+todo lo demás hereda el defecto. Se aplica la misma batería de cinco pruebas a
+PCG64 y a un generador congruencial lineal propio,
+$x_{n+1}=(16807\,x_n)\bmod(2^{31}-1)$.
+
+- Ji-cuadrada de uniformidad sobre veinte celdas equiprobables.
+- KS contra $U(0,1)$.
+- Rachas ascendentes y descendentes.
+- Ljung-Box conjunto para los rezagos 1 a 5.
+- Ji-cuadrada serial sobre tercias no solapadas del cubo unitario.
+
+**Nivel 2. Las transformaciones.**
 
 - KS de interarribos contra la exponencial teórica.
 - KS de las normales Marsaglia contra $N(0,1)$.
-- KS de interarribos contra la lognormal parametrizada.
 - Correlación de Pearson con rezago uno para ambos interarribos.
-- Índice de dispersión sobre calendarios Poisson repetidos.
-- Prueba binomial de la aceptación Polar contra $\pi/4$.
-- Comparación de media, varianza y CV teóricos frente a los observados.
+- Prueba binomial de la aceptación Polar contra $\pi/4$, con número de pares
+  propuestos fijo para que el contraste sea exacto.
+- Contraste de la media lognormal frente a $1/\lambda$.
 
-En la semilla de referencia ninguno fue rechazado: $p_{\mathrm{KS\ exp}}=0.1863$,
-$p_{\mathrm{KS\ normal}}=p_{\mathrm{KS\ lognormal}}=0.9236$ y
-$p_{\mathrm{disp.}}=0.5439$. No rechazar una hipótesis significa que la
-muestra no contradice el modelo; no es una garantía absoluta.
+**Nivel 3. El conteo del calendario.**
+
+- Índice de dispersión sobre calendarios Poisson repetidos.
+- Ji-cuadrada de bondad de ajuste contra la función de masa Poisson$(\lambda T)$.
+
+Dos ausencias son deliberadas. **No se contrasta el ajuste de la lognormal**
+porque KS es invariante ante transformaciones monótonas y
+$\Delta=e^{\mu+\sigma Z}$ lo es: ese contraste devuelve exactamente el mismo
+estadístico y el mismo valor $p$ que el KS de $Z$, así que no sería un séptimo
+control sino el mismo número escrito dos veces. Lo que ese KS no puede ver —si la
+parametrización cumple $E[\Delta]=1/\lambda$— se contrasta con la media.
+
+**Corrección por multiplicidad.** Con 18 contrastes simultáneos al 5 %, la
+probabilidad de que al menos uno se rechace por azar ronda el 60 %. La decisión
+se toma sobre el valor $p$ ajustado por Holm-Bonferroni.
+
+En la semilla de referencia ninguno fue rechazado, ni antes ni después de la
+corrección: el menor valor $p$ nominal de toda la familia fue $0.1716$. Algunos
+valores representativos: $p_{\mathrm{KS\ exp}}=0.1863$,
+$p_{\mathrm{KS\ normal}}=0.9236$, $p_{\mathrm{KS\ unif.}}=0.3006$,
+$p_{\mathrm{media\ lognormal}}=0.7826$ y $p_{\mathrm{disp.}}=0.5439$. No rechazar
+una hipótesis significa que la muestra no contradice el modelo; no es una
+garantía absoluta.
+
+### Control negativo: uniformidad no es aleatoriedad
+
+Una batería que solo aprueba generadores correctos no demuestra nada mientras no
+se compruebe que también reprueba a los defectuosos. El control es un contador
+puro $x_{n+1}=(x_n+1)\bmod m$, que recorre su período completo: su histograma es
+exactamente plano y su ajuste a la uniforme es perfecto, pero cada valor queda
+determinado por el anterior.
+
+| Contraste | Propiedad | Valor $p$ |
+|---|---|---|
+| Ji-cuadrada de uniformidad | Forma marginal | 0.9999 |
+| KS contra $U(0,1)$ | Forma marginal | 1.0000 |
+| Rachas arriba/abajo | Orden secuencial | $<10^{-16}$ |
+| Ljung-Box rezagos 1-5 | Correlación conjunta | $<10^{-16}$ |
+| Serial de tercias | Estructura en el cubo | $<10^{-16}$ |
+
+Aprueba los dos contrastes de forma y fracasa en los tres de dependencia. Esa
+asimetría es la razón cuantitativa de por qué la validación no se agota en un
+histograma. El control se reporta en `report/data/uniform_control.csv`, fuera de
+la tabla principal, porque se espera que falle.
 
 <p align="center">
   <img src="zombie_poisson_streamlit/assets/report-generator-validation.png" alt="Validación formal de los generadores" width="900">
@@ -398,9 +451,12 @@ En sistemas tipo Unix el comando equivalente es:
 python -m unittest discover -s tests -v
 ```
 
-Las 12 pruebas cubren reproducibilidad, momentos, siete contrastes formales,
-consistencia posterior a una derrota, validación geométrica, emparejamiento,
-bootstrap, estabilidad respecto de $\Delta t$ y ausencia de daño después de $T$.
+Las 21 pruebas cubren reproducibilidad, momentos, los 18 contrastes formales
+bajo corrección de Holm, ausencia de estadísticos duplicados entre contrastes,
+la batería de la fuente uniforme y su control negativo, el LCG propio, la
+potencia de la ji-cuadrada del conteo, consistencia posterior a una derrota,
+validación geométrica, emparejamiento, bootstrap, estabilidad respecto de
+$\Delta t$ y ausencia de daño después de $T$.
 
 ## Entregables académicos
 

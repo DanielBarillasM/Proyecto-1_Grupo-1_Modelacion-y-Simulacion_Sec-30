@@ -547,11 +547,14 @@ def generator_validation_figure(
     lambda_rate: float,
     polar_cv: float,
 ) -> go.Figure:
-    """Resume ajuste distributivo y conteos sin depender de una sola misión.
+    """Resume la cadena completa: uniformes, transformaciones y conteos.
 
     Los histogramas usan las muestras fijas del laboratorio. El gráfico Q-Q
     contrasta directamente las normales producidas por Marsaglia y el panel de
-    conteos compara las frecuencias empíricas con una Poisson(lambda*T).
+    conteos compara las frecuencias empíricas con una Poisson(lambda*T). La
+    última fila audita la fuente uniforme: la izquierda muestra que dos fuentes
+    distintas producen la misma forma marginal y la derecha muestra por qué esa
+    forma no basta para declarar aleatoriedad.
     """
 
     samples = validation.samples
@@ -559,17 +562,23 @@ def generator_validation_figure(
     lognormal = samples["lognormal"].to_numpy()
     normals = samples["normal_z"].to_numpy()
     counts = validation.poisson_counts["count"].to_numpy()
+    uniforms = validation.uniform_samples
+    reference_uniforms = uniforms["pcg64"].to_numpy()
+    own_uniforms = uniforms["lcg_minstd"].to_numpy()
+    degenerate_uniforms = uniforms["lcg_degenerate"].to_numpy()
     fig = make_subplots(
-        rows=2,
+        rows=3,
         cols=2,
         subplot_titles=(
             "Interarribos exponenciales",
             "Interarribos Polar-lognormal",
             "Q-Q de normales Marsaglia",
             "Conteos Poisson repetidos",
+            "Fuente uniforme: forma marginal",
+            "Fuente uniforme: rezago 1",
         ),
         horizontal_spacing=0.12,
-        vertical_spacing=0.17,
+        vertical_spacing=0.11,
     )
 
     fig.add_trace(go.Histogram(
@@ -651,14 +660,57 @@ def generator_validation_figure(
         name="PMF Poisson de referencia",
     ), row=2, col=2)
 
+    # Ambas fuentes uniformes comparten histograma; la diferencia entre un
+    # generador utilizable y uno inservible no vive en esta forma marginal.
+    for values, colour, name in (
+        (reference_uniforms, POISSON_COLOR, "PCG64"),
+        (own_uniforms, POLAR_COLOR, "LCG propio"),
+    ):
+        fig.add_trace(go.Histogram(
+            x=values,
+            histnorm="probability density",
+            nbinsx=20,
+            marker_color=colour,
+            opacity=0.55,
+            name=name,
+        ), row=3, col=1)
+    fig.add_trace(go.Scatter(
+        x=[0.0, 1.0],
+        y=[1.0, 1.0],
+        mode="lines",
+        line=dict(color=ORANGE, width=3),
+        name="Densidad uniforme",
+    ), row=3, col=1)
+
+    # El diagrama de rezago uno revela lo que el histograma esconde: el control
+    # degenerado se ordena sobre una recta y no llena el cuadrado.
+    fig.add_trace(go.Scatter(
+        x=own_uniforms[:-1],
+        y=own_uniforms[1:],
+        mode="markers",
+        marker=dict(color=POLAR_COLOR, size=3, opacity=0.4),
+        name="LCG propio",
+    ), row=3, col=2)
+    fig.add_trace(go.Scatter(
+        x=degenerate_uniforms[:-1],
+        y=degenerate_uniforms[1:],
+        mode="markers",
+        marker=dict(color=RED, size=3, opacity=0.75),
+        name="Control degenerado",
+    ), row=3, col=2)
+
     fig.update_xaxes(title_text="Delta (s)", row=1, col=1)
     fig.update_xaxes(title_text="Delta (s)", row=1, col=2)
     fig.update_xaxes(title_text="Cuantil teórico", row=2, col=1)
     fig.update_yaxes(title_text="Cuantil observado", row=2, col=1)
     fig.update_xaxes(title_text="N(T)", row=2, col=2)
     fig.update_yaxes(title_text="Frecuencia relativa", row=2, col=2)
+    fig.update_xaxes(title_text="u", row=3, col=1)
+    fig.update_yaxes(title_text="Densidad", row=3, col=1)
+    fig.update_xaxes(title_text="u(n)", row=3, col=2)
+    fig.update_yaxes(title_text="u(n+1)", row=3, col=2)
     fig.update_layout(
-        height=760,
+        height=1_120,
         barmode="overlay",
         margin=dict(l=20, r=20, t=75, b=25),
         paper_bgcolor=PANEL,

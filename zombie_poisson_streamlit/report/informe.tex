@@ -94,8 +94,10 @@ un proceso de renovación con interarribos lognormales; las normales auxiliares
 se obtienen mediante Marsaglia Polar. Ambos modelos comparten tiempo medio entre
 llegadas, pero difieren en variabilidad y memoria.
 
-La versión auditada agrega pruebas formales de bondad de ajuste, independencia,
-dispersión y aceptación; comparación pareada con McNemar, Wilcoxon y bootstrap;
+La versión auditada valida la cadena completa: primero la fuente uniforme que
+alimenta a ambos métodos, después las transformaciones y por último el conteo del
+calendario, con \TestCount{} contrastes que no se solapan entre sí y corrección
+por multiplicidad; comparación pareada con McNemar, Wilcoxon y bootstrap;
 intervalos de Wilson; benchmark de generación; corrección del límite temporal;
 figuras reproducibles y una escena tridimensional. En el escenario base,
 Poisson alcanzó \PoissonSurvival\,\% de supervivencia y Polar-lognormal
@@ -315,16 +317,47 @@ Semilla & 22193 & --- & Radio arena & 18 & m \\
 \subsection{Validación formal}
 
 Las muestras de interarribos tienen tamaño fijo y no sufren censura por
-horizonte. Se adopta $\alpha=0.05$ y se ejecutan:
+horizonte. Se adopta $\alpha=0.05$ y la auditoría recorre los tres niveles en que
+se construye una variable aleatoria.
+
+\textbf{Nivel 1, la fuente uniforme.} Tanto la transformada inversa como
+Marsaglia Polar son funciones de uniformes: un defecto en la entrada contamina
+toda la salida. Se aplican cinco contrastes a PCG64 y los mismos cinco a un
+generador congruencial lineal propio, $x_{n+1}=(16807\,x_n)\bmod(2^{31}-1)$:
 
 \begin{itemize}
-  \item KS contra Exponencial$(\lambda)$;
-  \item KS de las normales Marsaglia contra $N(0,1)$;
-  \item KS contra la lognormal parametrizada;
-  \item Pearson de rezago uno para independencia;
-  \item índice de dispersión sobre 600 calendarios Poisson;
-  \item prueba binomial de aceptación Polar contra $\pi/4$.
+  \item ji-cuadrada de uniformidad sobre veinte celdas equiprobables;
+  \item KS contra $U(0,1)$;
+  \item rachas ascendentes y descendentes;
+  \item Ljung-Box conjunto para los rezagos 1 a 5;
+  \item ji-cuadrada serial sobre tercias no solapadas del cubo unitario.
 \end{itemize}
+
+\textbf{Nivel 2, las transformaciones.} KS contra Exponencial$(\lambda)$, KS de
+las normales Marsaglia contra $N(0,1)$, Pearson de rezago uno en ambos flujos,
+prueba binomial de aceptación contra $\pi/4$ y contraste de la media lognormal
+frente a $1/\lambda$.
+
+\textbf{Nivel 3, el conteo.} Índice de dispersión y ji-cuadrada de bondad de
+ajuste contra la función de masa Poisson$(\lambda T)$, ambos sobre 600
+calendarios completos.
+
+Dos decisiones merecen justificación explícita.
+
+\emph{Por qué no se contrasta la lognormal.} El estadístico de Kolmogorov-Smirnov
+depende solo de los valores $F(x_i)$ y es por tanto invariante ante
+transformaciones monótonas. Como $\Delta=e^{\mu+\sigma Z}$ es monótona en $Z$, un
+KS de $\Delta$ contra la lognormal devuelve exactamente el mismo estadístico y el
+mismo valor $p$ que el KS de $Z$ contra $N(0,1)$: no es un contraste adicional,
+es el mismo número escrito dos veces. Lo que el KS de $Z$ no puede detectar es un
+error en la parametrización, porque $\mu$ y $\sigma$ no intervienen en él; por eso
+se contrasta aparte que $E[\Delta]=1/\lambda$.
+
+\emph{Por qué se corrige por multiplicidad.} Con \TestCount{} contrastes
+simultáneos al 5\,\%, la probabilidad de que al menos uno se rechace por azar
+supera el 60\,\%. La decisión se toma sobre el valor $p$ ajustado por
+Holm-Bonferroni, que controla la tasa de error por familia sin suponer
+independencia entre las pruebas.
 
 No rechazar $H_0$ no demuestra perfección; indica que la muestra no contradice
 el modelo bajo el contraste utilizado.
@@ -365,28 +398,70 @@ Los resultados fueron generados el \ResultsDate{} mediante el script
 
 \begin{table}[H]
 \centering
-\caption{Contrastes principales, $\alpha=0.05$.}
+\caption{Contrastes representativos de cada nivel, $\alpha=0.05$.}
 \begin{tabular}{lll}
 \toprule
 Generador & Contraste & Valor $p$ \\
 \midrule
+Fuente uniforme PCG64 & KS contra $U(0,1)$ & \UniformKSP \\
+Fuente uniforme PCG64 & Serial de tercias & \UniformSerialP \\
+LCG propio (MINSTD) & KS contra $U(0,1)$ & \LcgKSP \\
+LCG propio (MINSTD) & Serial de tercias & \LcgSerialP \\
 Poisson-exponencial & KS exponencial & \ExponentialKSP \\
 Marsaglia Polar & KS normal de $Z$ & \NormalKSP \\
-Polar-lognormal & KS lognormal & \LognormalKSP \\
+Marsaglia Polar & Aceptación contra $\pi/4$ & \AcceptanceP \\
+Polar-lognormal & Media contra $1/\lambda$ & \LognormalMeanP \\
 Conteo Poisson & Índice de dispersión & \CountDispersionP \\
+Conteo Poisson & Ji-cuadrada contra pmf & \CountChiP \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Los siete contrastes completos no fueron rechazados al 5\,\%. La
-Figura~\ref{fig:validation} inspecciona forma, cuantiles y conteos.
+Ninguno de los \TestCount{} contrastes fue rechazado. El menor valor $p$ nominal
+de toda la familia fue \SmallestNominalP, de modo que la conclusión no depende de
+la corrección por multiplicidad: se sostiene igual antes y después de aplicarla.
+La tasa de aceptación observada del método polar fue \AcceptanceRate, compatible
+con el valor teórico $\pi/4\approx0.7854$. La Figura~\ref{fig:validation}
+inspecciona forma, cuantiles, conteos y estructura de la fuente uniforme.
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{report-generator-validation.png}
-  \caption{Histogramas, densidades, Q-Q normal y conteos Poisson.}
+  \caption{Histogramas, densidades, Q-Q normal, conteos Poisson y auditoría de
+  la fuente uniforme. El diagrama de rezago uno, abajo a la derecha, contrapone
+  el LCG propio con el control degenerado.}
   \label{fig:validation}
 \end{figure}
+
+\subsection{Control negativo}
+
+Una batería que solo aprueba generadores correctos no demuestra nada mientras no
+se compruebe que también reprueba a los defectuosos. Se somete a los mismos
+contrastes un contador puro $x_{n+1}=(x_n+1)\bmod m$, que recorre su período
+completo y es por construcción perfectamente uniforme, pero también
+perfectamente predecible. El resultado separa dos propiedades que suelen
+confundirse:
+
+\begin{table}[H]
+\centering
+\caption{Control negativo: uniforme por construcción, jamás aleatorio.}
+\begin{tabular}{lll}
+\toprule
+Contraste & Propiedad evaluada & Valor $p$ \\
+\midrule
+Ji-cuadrada de uniformidad & Forma marginal & \ControlUniformityP \\
+KS contra $U(0,1)$ & Forma marginal & \ControlKSP \\
+Rachas arriba/abajo & Orden secuencial & $\ControlRunsP$ \\
+Ljung-Box rezagos 1--5 & Correlación conjunta & $\ControlLjungP$ \\
+Serial de tercias & Estructura en el cubo & $\ControlSerialP$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+El contador aprueba los dos contrastes de forma con valores $p$ cercanos a uno y
+fracasa en los tres de dependencia. Esta asimetría es la justificación cuantitativa
+de por qué la validación no se agota en un histograma: uniformidad y aleatoriedad
+son propiedades distintas y exigen pruebas distintas.
 
 \subsection{Costo de generación}
 
@@ -475,7 +550,7 @@ inferencia final se apoya en cientos de partidas.
 Criterio & Poisson-exponencial & Polar-lognormal \\
 \midrule
 Fundamento & Proceso de conteo exacto & Proceso de renovación \\
-Ajuste & No rechazado & Normal y lognormal no rechazadas \\
+Ajuste & No rechazado & $Z$ normal y media calibrada \\
 Interpretación & Un parámetro; relación exacta & Media y CV controlables \\
 Costo & \PoissonMicros\ $\mu$s/valor & \PolarMicros\ $\mu$s/valor \\
 Rachas & CV 1; mayor concurrencia & CV 0.45; mayor regularidad \\
@@ -509,13 +584,21 @@ futuro, no una deuda de esta entrega.
 
 \section{Verificación}
 
-La suite contiene doce pruebas:
+La suite contiene veintiuna pruebas:
 
 \begin{enumerate}
   \item reproducibilidad Poisson;
   \item media y varianza del conteo;
   \item media y positividad lognormal;
-  \item siete contrastes estadísticos de referencia;
+  \item los \TestCount{} contrastes de referencia bajo corrección de Holm;
+  \item ausencia de estadísticos duplicados entre contrastes;
+  \item separación del control negativo respecto de la tabla principal;
+  \item reproducibilidad y rango del LCG propio;
+  \item aceptación de la batería sobre la fuente de referencia;
+  \item detección de dependencia en un generador uniforme pero predecible;
+  \item corrección de Holm contra su cálculo manual y sus cotas;
+  \item diseño de propuestas fijas para la prueba de aceptación;
+  \item potencia de la ji-cuadrada del conteo ante una media desplazada;
   \item reproducibilidad de partida;
   \item separación de eventos programados y ocurridos;
   \item rechazo de geometría inválida;
@@ -559,6 +642,10 @@ pdflatex informe.tex
   \item El combate usa paso finito; la convergencia cubre un caso sencillo.
   \item La variación uniforme de atributos no tiene calibración empírica.
   \item KS depende del tamaño; se complementa con momentos y Q-Q.
+  \item El LCG propio se audita, pero no sustituye a PCG64 dentro del motor:
+        su papel es servir de término de comparación con evidencia.
+  \item El control negativo demuestra potencia frente a dependencia secuencial;
+        no cubre todas las formas posibles de defecto.
   \item Valores $p$ no miden importancia práctica; se reportan efectos e IC.
   \item El benchmark depende del equipo.
   \item Las curvas Monte Carlo usan una cuadrícula finita.
@@ -568,7 +655,12 @@ pdflatex informe.tex
 \section{Conclusiones}
 
 \begin{enumerate}
-  \item Siete contrastes fueron coherentes con los generadores declarados.
+  \item Los \TestCount{} contrastes fueron coherentes con los generadores
+        declarados, incluida la fuente uniforme que ambos métodos comparten, y
+        ninguno se solapa con otro.
+  \item El control negativo confirma que la batería distingue uniformidad de
+        aleatoriedad: un contador aprueba los contrastes de forma y fracasa en
+        los de dependencia.
   \item Igual media no produjo igual concurrencia: Poisson generó un pico medio
         aproximadamente tres enemigos mayor.
   \item El diseño pareado encontró diferencia de supervivencia en el escenario

@@ -1,0 +1,4 @@
+# Índice local de memsearch: caché de una herramienta de asistencia, ajena al
+# proyecto. Se regenera sola y no debe viajar en el repositorio.
+.memsearch/
+.memsearch*

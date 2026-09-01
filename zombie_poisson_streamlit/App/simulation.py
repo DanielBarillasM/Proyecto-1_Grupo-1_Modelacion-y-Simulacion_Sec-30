@@ -130,12 +130,15 @@ class SimulationResult:
 class GeneratorValidationResult:
     """Evidencia reproducible sobre la calidad de los generadores.
 
-    ``tests`` contiene contrastes formales con sus valores p; ``moments``
-    compara momentos teóricos y empíricos; ``samples`` conserva muestras de
-    tamaño fijo, sin censura por horizonte, para histogramas y gráficos Q-Q; y
-    ``performance`` registra medianas de tiempo de generación. Separar estas
-    tablas permite reutilizar exactamente la misma evidencia en Streamlit, el
-    informe y los scripts de figuras.
+    ``tests`` contiene contrastes formales con su valor p nominal y su valor p
+    corregido por multiplicidad; ``moments`` compara momentos teóricos y
+    empíricos; ``samples`` conserva muestras de tamaño fijo, sin censura por
+    horizonte, para histogramas y gráficos Q-Q; ``uniform_samples`` guarda los
+    uniformes de cada fuente auditada; ``uniform_control`` reporta aparte el
+    generador degenerado que sirve de control negativo; y ``performance``
+    registra medianas de tiempo de generación. Separar estas tablas permite
+    reutilizar exactamente la misma evidencia en Streamlit, el informe y los
+    scripts de figuras.
     """
 
     tests: pd.DataFrame
@@ -143,6 +146,8 @@ class GeneratorValidationResult:
     samples: pd.DataFrame
     poisson_counts: pd.DataFrame
     performance: pd.DataFrame
+    uniform_samples: pd.DataFrame
+    uniform_control: pd.DataFrame
 
 
 # Ambos generadores entregan el mismo esquema. Las columnas que no aplican a un
@@ -265,6 +270,256 @@ def _pearson_lag_test(values: np.ndarray) -> tuple[float, float]:
     return float(result.statistic), float(result.pvalue)
 
 
+class LinearCongruentialGenerator:
+    """Generador congruencial lineal propio: ``x_{n+1} = (a x_n + c) mod m``.
+
+    El proyecto usa PCG64 de NumPy para producir resultados, pero un LCG escrito
+    a mano permite auditar la fuente uniforme con el mismo detalle con que se
+    auditan las transformaciones. Se emplea en dos papeles opuestos:
+
+    * ``MINSTD_PARAMETERS`` es un multiplicador clásico de calidad aceptable y
+      compite de igual a igual con PCG64 en la batería de contrastes;
+    * ``COUNTER_PARAMETERS`` produce una rampa perfectamente uniforme pero
+      totalmente predecible. Sirve como control negativo: demuestra que la
+      batería detecta dependencia y no solo desviaciones de la forma uniforme.
+
+    Notes:
+        No sustituye a NumPy dentro del motor de simulación. Su ámbito es el
+        laboratorio de validación, donde se compara contra la fuente real.
+    """
+
+    def __init__(self, multiplier: int, increment: int, modulus: int, seed: int) -> None:
+        if modulus <= 1 or multiplier <= 0 or increment < 0:
+            raise ValueError("Parámetros LCG inválidos")
+        self.multiplier = int(multiplier)
+        self.increment = int(increment)
+        self.modulus = int(modulus)
+        state = int(seed) % self.modulus
+        # Un LCG multiplicativo (c = 0) se queda atrapado en el cero absorbente.
+        if state == 0 and self.increment == 0:
+            state = 1
+        self._state = state
+
+    def next_uniform(self) -> float:
+        """Avanza el estado y devuelve un uniforme en ``[0, 1)``."""
+
+        self._state = (self.multiplier * self._state + self.increment) % self.modulus
+        return self._state / self.modulus
+
+    def uniforms(self, size: int) -> np.ndarray:
+        """Devuelve ``size`` uniformes consecutivos del mismo flujo."""
+
+        if size <= 0:
+            raise ValueError("size debe ser positivo")
+        return np.asarray([self.next_uniform() for _ in range(size)], dtype=float)
+
+
+# Park y Miller, ampliamente documentado y de período completo 2^31 - 2.
+MINSTD_PARAMETERS = (16_807, 0, 2**31 - 1)
+# Contador puro: recorre todo su período en orden. Uniforme, jamás aleatorio.
+# El módulo divide los tamaños de muestra que ofrece la interfaz (1000, 2000,
+# 4000 y 8000), de modo que el control recorre un número entero de períodos y
+# su histograma es exactamente plano. Así, cuando falla, falla por dependencia
+# y no por una cobertura incompleta del intervalo.
+COUNTER_PARAMETERS = (1, 1, 500)
+
+
+def _chi_square_uniformity(values: np.ndarray, cells: int = 20) -> tuple[float, float]:
+    """Contrasta la forma marginal con celdas equiprobables en ``[0, 1)``.
+
+    Responde a una pregunta que ninguna prueba de independencia contesta:
+    ¿aparecen todos los tramos del intervalo con la misma frecuencia?
+    """
+
+    observed, _ = np.histogram(values, bins=cells, range=(0.0, 1.0))
+    expected = np.full(cells, len(values) / cells, dtype=float)
+    result = stats.chisquare(observed, expected)
+    return float(result.statistic), float(result.pvalue)
+
+
+def _runs_up_down(values: np.ndarray) -> tuple[float, float]:
+    """Prueba de rachas ascendentes y descendentes sobre el orden observado.
+
+    Cuenta cambios de sentido entre valores consecutivos. Bajo independencia el
+    número de rachas tiene media ``(2n-1)/3`` y varianza ``(16n-29)/90``. Detecta
+    tendencias y ciclos que una prueba de forma marginal no puede ver.
+    """
+
+    differences = np.diff(values)
+    signs = np.sign(differences)
+    signs = signs[signs != 0]
+    if len(signs) < 20:
+        raise ValueError("La prueba de rachas necesita más observaciones")
+    runs = 1 + int(np.count_nonzero(np.diff(signs) != 0))
+    size = len(signs) + 1
+    mean = (2.0 * size - 1.0) / 3.0
+    variance = (16.0 * size - 29.0) / 90.0
+    z = (runs - mean) / sqrt(variance)
+    return float(z), float(2.0 * stats.norm.sf(abs(z)))
+
+
+def _ljung_box(values: np.ndarray, lags: int = 5) -> tuple[float, float]:
+    """Contrasta correlación serial conjunta hasta el rezago ``lags``.
+
+    Un solo rezago puede salir limpio mientras la estructura vive en otro. El
+    estadístico de Ljung-Box acumula los primeros ``lags`` y se distribuye
+    ``chi2`` con ``lags`` grados de libertad bajo independencia.
+    """
+
+    size = len(values)
+    centred = values - values.mean()
+    denominator = float(np.sum(centred**2))
+    statistic = 0.0
+    for lag in range(1, lags + 1):
+        correlation = float(np.sum(centred[lag:] * centred[:-lag]) / denominator)
+        statistic += correlation**2 / (size - lag)
+    statistic *= size * (size + 2)
+    return float(statistic), float(stats.chi2.sf(statistic, lags))
+
+
+def _serial_three_dimensional(values: np.ndarray, cells_per_axis: int = 4) -> tuple[float, float]:
+    """Contrasta uniformidad de tercias no solapadas dentro del cubo unitario.
+
+    Los generadores congruenciales colocan sus puntos sobre familias de planos.
+    El defecto es invisible en una dimensión y puede serlo en dos; por eso se
+    revisa el cubo. Las tercias no se solapan para conservar la independencia
+    que supone la ji-cuadrada.
+    """
+
+    usable = (len(values) // 3) * 3
+    triples = values[:usable].reshape(-1, 3)
+    indices = np.minimum((triples * cells_per_axis).astype(int), cells_per_axis - 1)
+    flat = (
+        indices[:, 0] * cells_per_axis**2
+        + indices[:, 1] * cells_per_axis
+        + indices[:, 2]
+    )
+    total_cells = cells_per_axis**3
+    observed = np.bincount(flat, minlength=total_cells)
+    expected = np.full(total_cells, len(triples) / total_cells, dtype=float)
+    if expected[0] < 5.0:
+        raise ValueError("Se requieren más tercias para la prueba serial")
+    result = stats.chisquare(observed, expected)
+    return float(result.statistic), float(result.pvalue)
+
+
+def _poisson_count_chi_square(counts: np.ndarray, expected_mean: float) -> tuple[float, float, int]:
+    """Contrasta la forma completa de ``N(T)`` contra ``Poisson(lambda*T)``.
+
+    El índice de dispersión solo verifica que media y varianza coincidan; una
+    distribución con esa propiedad puede no ser Poisson. Esta prueba compara
+    todas las frecuencias. Las celdas se fusionan desde la izquierda hasta que
+    cada frecuencia esperada supera cinco, y ``lambda*T`` es conocido, de modo
+    que no se pierden grados de libertad por estimación.
+
+    Returns:
+        Estadístico, valor p y grados de libertad efectivos.
+    """
+
+    size = len(counts)
+    highest = int(counts.max())
+    support = np.arange(0, highest + 1)
+    probabilities = np.append(
+        stats.poisson.pmf(support, expected_mean),
+        float(stats.poisson.sf(highest, expected_mean)),
+    )
+    frequencies = np.append(np.bincount(counts.astype(int), minlength=highest + 1), 0)
+
+    merged_probabilities: list[float] = []
+    merged_frequencies: list[float] = []
+    probability_accumulator = 0.0
+    frequency_accumulator = 0.0
+    for probability, frequency in zip(probabilities, frequencies):
+        probability_accumulator += float(probability)
+        frequency_accumulator += float(frequency)
+        if probability_accumulator * size >= 5.0:
+            merged_probabilities.append(probability_accumulator)
+            merged_frequencies.append(frequency_accumulator)
+            probability_accumulator = 0.0
+            frequency_accumulator = 0.0
+    if merged_probabilities and probability_accumulator > 0.0:
+        merged_probabilities[-1] += probability_accumulator
+        merged_frequencies[-1] += frequency_accumulator
+    if len(merged_probabilities) < 3:
+        raise ValueError("Se requieren más calendarios para la ji-cuadrada del conteo")
+
+    expected = np.asarray(merged_probabilities) * size
+    expected *= sum(merged_frequencies) / expected.sum()
+    result = stats.chisquare(np.asarray(merged_frequencies), expected)
+    return float(result.statistic), float(result.pvalue), len(merged_probabilities) - 1
+
+
+def uniform_source_tests(
+    values: np.ndarray,
+    label: str,
+    lags: int = 5,
+    cells: int = 20,
+) -> list[tuple[str, str, float, float]]:
+    """Aplica la batería completa a una fuente uniforme y devuelve sus filas.
+
+    Los cinco contrastes miden propiedades distintas y no se implican entre sí:
+    forma marginal por celdas, discrepancia máxima acumulada, orden secuencial,
+    correlación conjunta y estructura en tres dimensiones. Un generador puede
+    aprobar los dos primeros y fracasar en los tres siguientes; ese es
+    exactamente el caso del control negativo incluido en la validación.
+    """
+
+    # La prueba serial reparte tercias entre 64 celdas y exige al menos cinco
+    # esperadas por celda; por debajo de mil valores la batería no es aplicable.
+    if len(values) < 1_000:
+        raise ValueError("La auditoría de la fuente uniforme necesita al menos 1000 valores")
+    kolmogorov = stats.kstest(values, "uniform")
+    return [
+        (label, "Ji-cuadrada de uniformidad", *_chi_square_uniformity(values, cells)),
+        (label, "KS contra U(0,1)", float(kolmogorov.statistic), float(kolmogorov.pvalue)),
+        (label, "Rachas arriba/abajo", *_runs_up_down(values)),
+        (label, f"Ljung-Box rezagos 1-{lags}", *_ljung_box(values, lags)),
+        (label, "Serial de tercias en el cubo", *_serial_three_dimensional(values)),
+    ]
+
+
+def holm_adjusted_p_values(p_values: np.ndarray) -> np.ndarray:
+    """Corrige por multiplicidad con el método de Holm-Bonferroni.
+
+    Con dieciocho contrastes simultáneos a ``alpha = 0.05``, la probabilidad de
+    que al menos uno se rechace por azar ronda el 60 %. Holm controla la tasa de
+    error por familia sin suponer independencia entre las pruebas y es uniformemente
+    más potente que Bonferroni. El valor devuelto se compara contra el mismo
+    ``alpha`` nominal.
+    """
+
+    total = len(p_values)
+    order = np.argsort(p_values)
+    ordered = np.asarray(p_values, dtype=float)[order]
+    # El multiplicador decrece con el rango y la acumulación por máximo
+    # garantiza que el ajuste conserve el orden de los valores originales.
+    adjusted = np.maximum.accumulate((total - np.arange(total)) * ordered)
+    result = np.empty(total, dtype=float)
+    result[order] = np.minimum(adjusted, 1.0)
+    return result
+
+
+def estimate_polar_acceptance(
+    proposed_pairs: int,
+    rng: np.random.Generator,
+) -> tuple[int, int]:
+    """Propone un número fijo de pares y cuenta cuántos caen en el círculo.
+
+    ``sample_marsaglia_normals`` se detiene al completar la muestra pedida: el
+    número de aceptaciones queda fijo y el de propuestas es aleatorio, que es lo
+    contrario de lo que supone una prueba binomial. Este experimento invierte el
+    diseño —``n`` fijo, éxitos aleatorios— para que el contraste contra ``pi/4``
+    sea exacto.
+    """
+
+    if proposed_pairs < 100:
+        raise ValueError("Se requieren al menos 100 pares propuestos")
+    pairs = rng.uniform(-1.0, 1.0, size=(proposed_pairs, 2))
+    squared_radius = np.sum(pairs**2, axis=1)
+    accepted = int(np.count_nonzero((squared_radius > 0.0) & (squared_radius < 1.0)))
+    return accepted, proposed_pairs
+
+
 def validate_arrival_generators(
     config: SimulationConfig,
     sample_size: int = 4_000,
@@ -272,47 +527,86 @@ def validate_arrival_generators(
     benchmark_repetitions: int = 7,
     alpha: float = 0.05,
 ) -> GeneratorValidationResult:
-    """Ejecuta bondad de ajuste, momentos, independencia y rendimiento.
+    """Audita la cadena completa: fuente uniforme, transformaciones y conteo.
 
-    Los contrastes se realizan con muestras de tamaño fijo para evitar la
-    censura de un calendario finito. El conteo Poisson sí se valida generando
-    calendarios completos repetidos, exactamente con la función usada por el
-    simulador. Los tiempos de ejecución son medianas descriptivas del equipo
-    actual y no participan en la decisión estadística.
+    La auditoría sigue el orden en que se construyen las variables. Primero se
+    contrasta la fuente uniforme, porque tanto la transformada inversa como
+    Marsaglia Polar son funciones de uniformes y un defecto allí contamina todo
+    lo demás. Después se contrastan las distribuciones derivadas y, por último,
+    el conteo ``N(T)`` que produce el calendario real.
+
+    Cada contraste mide una propiedad que ningún otro implica. En particular, no
+    se incluye una prueba de bondad de ajuste sobre la lognormal: el estadístico
+    de Kolmogorov-Smirnov es invariante ante transformaciones monótonas y
+    ``Delta = exp(mu + sigma Z)`` lo es, de modo que ese contraste devuelve el
+    mismo número que el KS de ``Z`` y no aportaría evidencia nueva. Lo que el KS
+    de ``Z`` no puede ver es si la parametrización cumple ``E[Delta] = 1/lambda``;
+    para eso se contrasta la media.
+
+    Los contrastes usan muestras de tamaño fijo para evitar la censura de un
+    calendario finito. El conteo Poisson sí se valida generando calendarios
+    completos repetidos, exactamente con la función usada por el simulador. Los
+    tiempos de ejecución son medianas descriptivas del equipo actual y no
+    participan en ninguna decisión estadística.
     """
 
     config.validate()
-    if sample_size < 100 or count_repetitions < 30 or benchmark_repetitions < 1:
+    if sample_size < 1_000 or count_repetitions < 30 or benchmark_repetitions < 1:
         raise ValueError("La validación requiere muestras y repeticiones suficientes")
 
-    seed_sequence = np.random.SeedSequence(config.seed).spawn(4)
+    seed_sequence = np.random.SeedSequence(config.seed).spawn(6)
     exponential_rng = np.random.default_rng(seed_sequence[0])
     polar_rng = np.random.default_rng(seed_sequence[1])
     count_rng = np.random.default_rng(seed_sequence[2])
     benchmark_rng = np.random.default_rng(seed_sequence[3])
+    uniform_rng = np.random.default_rng(seed_sequence[4])
+    acceptance_rng = np.random.default_rng(seed_sequence[5])
 
+    # --- Nivel 1: la fuente uniforme -------------------------------------
+    # PCG64 es la fuente real del proyecto. El LCG propio se somete a la misma
+    # batería para poder afirmar con evidencia, y no por autoridad, que la
+    # elección de generador base no está deteriorando las variables derivadas.
+    reference_uniforms = uniform_rng.uniform(0.0, 1.0, size=sample_size)
+    lcg_seed = int(uniform_rng.integers(1, 2**31 - 1))
+    own_lcg = LinearCongruentialGenerator(*MINSTD_PARAMETERS, seed=lcg_seed)
+    own_uniforms = own_lcg.uniforms(sample_size)
+    degenerate_lcg = LinearCongruentialGenerator(*COUNTER_PARAMETERS, seed=lcg_seed)
+    degenerate_uniforms = degenerate_lcg.uniforms(sample_size)
+
+    uniform_rows = (
+        uniform_source_tests(reference_uniforms, "Fuente uniforme PCG64")
+        + uniform_source_tests(own_uniforms, "LCG propio (MINSTD)")
+    )
+
+    # --- Nivel 2: las transformaciones -----------------------------------
     exponential = sample_exponential_interarrivals(
         config.lambda_rate, sample_size, exponential_rng
     )
-    lognormal, normals, acceptance_rate, proposed_pairs = (
-        sample_polar_lognormal_interarrivals(
-            config.lambda_rate, config.polar_cv, sample_size, polar_rng
-        )
+    lognormal, normals, _, _ = sample_polar_lognormal_interarrivals(
+        config.lambda_rate, config.polar_cv, sample_size, polar_rng
     )
     mu, sigma = _lognormal_parameters(config.lambda_rate, config.polar_cv)
 
-    # Kolmogorov-Smirnov evalúa la distribución completa; Pearson con rezago
-    # uno aporta un diagnóstico explícito de independencia temporal.
     exponential_ks = stats.kstest(
         exponential, "expon", args=(0.0, 1.0 / config.lambda_rate)
     )
     normal_ks = stats.kstest(normals, "norm")
-    lognormal_ks = stats.kstest(
-        lognormal, "lognorm", args=(sigma, 0.0, exp(mu))
-    )
     exponential_lag = _pearson_lag_test(exponential)
     lognormal_lag = _pearson_lag_test(lognormal)
+    # Contrasta la parametrización, no la forma: verifica que el par (mu, sigma)
+    # traslade la lognormal a la misma tasa media que la exponencial.
+    mean_test = stats.ttest_1samp(lognormal, 1.0 / config.lambda_rate)
 
+    # El diseño con pares propuestos fijos convierte la prueba binomial en exacta.
+    accepted_pairs, proposed_pairs = estimate_polar_acceptance(
+        max(2_000, sample_size), acceptance_rng
+    )
+    acceptance_rate = accepted_pairs / proposed_pairs
+    acceptance_test = stats.binomtest(
+        accepted_pairs, proposed_pairs, p=np.pi / 4.0, alternative="two-sided"
+    )
+
+    # --- Nivel 3: el conteo del calendario --------------------------------
     count_seeds = count_rng.integers(1, 2**31 - 1, size=count_repetitions)
     counts = np.asarray([
         len(generate_poisson_arrivals(
@@ -327,29 +621,40 @@ def validate_arrival_generators(
     dispersion_statistic = (count_repetitions - 1) * count_variance / count_mean
     dispersion_cdf = float(stats.chi2.cdf(dispersion_statistic, count_repetitions - 1))
     dispersion_p = min(1.0, 2.0 * min(dispersion_cdf, 1.0 - dispersion_cdf))
+    expected_count = config.lambda_rate * config.duration
+    count_chi, count_chi_p, _ = _poisson_count_chi_square(counts, expected_count)
 
-    accepted_pairs = int(np.ceil(sample_size / 2))
-    acceptance_test = stats.binomtest(
-        accepted_pairs,
-        proposed_pairs,
-        p=np.pi / 4.0,
-        alternative="two-sided",
-    )
-
-    test_rows = [
+    test_rows = uniform_rows + [
         ("Poisson-exponencial", "KS contra Exponencial", exponential_ks.statistic, exponential_ks.pvalue),
-        ("Marsaglia Polar", "KS de Z contra Normal(0,1)", normal_ks.statistic, normal_ks.pvalue),
-        ("Polar-lognormal", "KS contra Lognormal", lognormal_ks.statistic, lognormal_ks.pvalue),
         ("Poisson-exponencial", "Correlación de rezago 1", *exponential_lag),
+        ("Marsaglia Polar", "KS de Z contra Normal(0,1)", normal_ks.statistic, normal_ks.pvalue),
+        ("Marsaglia Polar", "Aceptación contra pi/4", acceptance_rate, acceptance_test.pvalue),
+        ("Polar-lognormal", "Media contra 1/lambda", float(mean_test.statistic), float(mean_test.pvalue)),
         ("Polar-lognormal", "Correlación de rezago 1", *lognormal_lag),
         ("Conteo Poisson", "Índice de dispersión", dispersion_statistic, dispersion_p),
-        ("Marsaglia Polar", "Aceptación contra pi/4", acceptance_rate, acceptance_test.pvalue),
+        ("Conteo Poisson", "Ji-cuadrada contra pmf Poisson", count_chi, count_chi_p),
     ]
     tests = pd.DataFrame(
         test_rows, columns=["generator", "test", "statistic", "p_value"]
     )
     tests["alpha"] = alpha
     tests["passes"] = tests["p_value"] >= alpha
+    # El criterio de decisión del proyecto es la columna corregida: con una
+    # familia de este tamaño, leer solo el valor p nominal produciría rechazos
+    # espurios con alta probabilidad.
+    tests["p_holm"] = holm_adjusted_p_values(tests["p_value"].to_numpy(dtype=float))
+    tests["passes_holm"] = tests["p_holm"] >= alpha
+
+    # El control negativo se reporta aparte porque se espera que falle. Mezclarlo
+    # con la tabla principal contaminaría el conteo de contrastes no rechazados.
+    control_rows = uniform_source_tests(
+        degenerate_uniforms, "LCG degenerado (control negativo)"
+    )
+    uniform_control = pd.DataFrame(
+        control_rows, columns=["generator", "test", "statistic", "p_value"]
+    )
+    uniform_control["alpha"] = alpha
+    uniform_control["passes"] = uniform_control["p_value"] >= alpha
 
     exponential_mean = 1.0 / config.lambda_rate
     exponential_variance = 1.0 / config.lambda_rate**2
@@ -379,6 +684,24 @@ def validate_arrival_generators(
             "mean_observed": float(normals.mean()),
             "variance_theoretical": 1.0,
             "variance_observed": float(normals.var(ddof=1)),
+            "cv_theoretical": float("nan"),
+            "cv_observed": float("nan"),
+        },
+        {
+            "generator": "Fuente uniforme PCG64",
+            "mean_theoretical": 0.5,
+            "mean_observed": float(reference_uniforms.mean()),
+            "variance_theoretical": 1.0 / 12.0,
+            "variance_observed": float(reference_uniforms.var(ddof=1)),
+            "cv_theoretical": float("nan"),
+            "cv_observed": float("nan"),
+        },
+        {
+            "generator": "LCG propio (MINSTD)",
+            "mean_theoretical": 0.5,
+            "mean_observed": float(own_uniforms.mean()),
+            "variance_theoretical": 1.0 / 12.0,
+            "variance_observed": float(own_uniforms.var(ddof=1)),
             "cv_theoretical": float("nan"),
             "cv_observed": float("nan"),
         },
@@ -413,6 +736,11 @@ def validate_arrival_generators(
         "lognormal": lognormal,
         "normal_z": normals,
     })
+    uniform_samples = pd.DataFrame({
+        "pcg64": reference_uniforms,
+        "lcg_minstd": own_uniforms,
+        "lcg_degenerate": degenerate_uniforms,
+    })
     poisson_counts = pd.DataFrame({"count": counts.astype(int)})
     return GeneratorValidationResult(
         tests=tests,
@@ -420,6 +748,8 @@ def validate_arrival_generators(
         samples=samples,
         poisson_counts=poisson_counts,
         performance=pd.DataFrame(benchmark_rows),
+        uniform_samples=uniform_samples,
+        uniform_control=uniform_control,
     )
 
 
