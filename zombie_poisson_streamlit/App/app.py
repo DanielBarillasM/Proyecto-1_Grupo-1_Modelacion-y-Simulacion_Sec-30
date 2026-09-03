@@ -213,7 +213,7 @@ with st.sidebar:
             "Llegadas esperadas por minuto",
             min_value=6.0,
             max_value=90.0,
-            value=39.0,
+            value=55.8,
             step=1.0,
             help="Se convierte internamente a lambda por segundo.",
         )
@@ -222,7 +222,7 @@ with st.sidebar:
             "Variabilidad Polar (CV)",
             0.15,
             1.20,
-            0.45,
+            0.60,
             0.05,
             help="Solo afecta al modelo Polar-lognormal. Un CV menor genera llegadas más regulares.",
         )
@@ -235,7 +235,7 @@ with st.sidebar:
         with st.expander("Características de los infectados", expanded=False):
             enemy_hp = st.slider("Vida base (HP)", 20, 100, 42, 2)
             enemy_speed = st.slider("Velocidad base (m/s)", 0.8, 3.0, 1.55, 0.05)
-            enemy_dps = st.slider("Daño de contacto por segundo", 3.0, 20.0, 9.0, 0.5)
+            enemy_dps = st.slider("Daño de contacto por segundo", 3.0, 20.0, 9.5, 0.5)
 
         with st.expander("Reproducibilidad y precisión", expanded=False):
             seed = st.number_input("Semilla", 1, 999999, 22193, 1)

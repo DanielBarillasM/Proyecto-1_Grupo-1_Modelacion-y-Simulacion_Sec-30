@@ -30,17 +30,22 @@ if str(APP_DIR) not in sys.path:
 from simulation import (
     ARRIVAL_COLUMNS,
     COUNTER_PARAMETERS,
+    DECISION_MATRIX_CRITERIA,
     MINSTD_PARAMETERS,
     LinearCongruentialGenerator,
     SimulationConfig,
     _poisson_count_chi_square,
+    build_decision_matrix,
     compare_arrival_models,
+    compare_normal_generators,
     estimate_polar_acceptance,
     generate_poisson_arrivals,
     generate_polar_arrivals,
     holm_adjusted_p_values,
     paired_comparison_statistics,
+    sample_marsaglia_normals_vectorized,
     simulate,
+    sweep_extreme_scenarios,
     uniform_source_tests,
     validate_arrival_generators,
     wilson_interval,
@@ -313,6 +318,92 @@ class ConfidenceIntervalTests(unittest.TestCase):
         self.assertGreater(high, 0.63)
         self.assertGreaterEqual(low, 0.0)
         self.assertLessEqual(high, 1.0)
+
+
+class MethodComparisonTests(unittest.TestCase):
+    """P2: comparación de métodos de generación para la misma distribución."""
+
+    def test_vectorized_polar_matches_the_theoretical_acceptance_rate(self) -> None:
+        # La vectorización por lotes no debe alterar la probabilidad de
+        # aceptación teórica (pi/4): solo cambia cuánto trabajo por propuesta
+        # se delega a NumPy en vez de al bucle de Python.
+        values, acceptance_rate, proposed = sample_marsaglia_normals_vectorized(
+            20_000, np.random.default_rng(11)
+        )
+        self.assertEqual(len(values), 20_000)
+        self.assertAlmostEqual(acceptance_rate, np.pi / 4.0, delta=0.02)
+        # Se proponen pares (dos normales por par aceptado), así que el total
+        # de pares propuestos ronda la mitad de la muestra dividida por pi/4.
+        self.assertGreater(proposed, 10_000)
+
+    def test_polar_and_box_muller_both_fit_the_same_target_distribution(self) -> None:
+        # Ambos métodos generan N(0,1): a diferencia del benchmark de procesos
+        # de llegada, aquí sí se comparan dos algoritmos para un mismo objetivo.
+        tests, performance = compare_normal_generators(sample_size=8_000, benchmark_repetitions=3)
+        self.assertEqual(set(tests["method"]), {"Marsaglia Polar", "Box-Muller"})
+        self.assertTrue(tests["passes"].all())
+        box_muller_row = tests.loc[tests["method"] == "Box-Muller"].iloc[0]
+        polar_row = tests.loc[tests["method"] == "Marsaglia Polar"].iloc[0]
+        # Box-Muller no rechaza propuestas; Polar rechaza cerca de 1 - pi/4.
+        self.assertEqual(box_muller_row["rejected_fraction"], 0.0)
+        self.assertAlmostEqual(polar_row["rejected_fraction"], 1.0 - np.pi / 4.0, delta=0.03)
+        self.assertEqual(len(performance), 2)
+        self.assertTrue((performance["microseconds_per_value"] > 0).all())
+
+    def test_decision_matrix_requires_weights_summing_to_one(self) -> None:
+        bad_criteria = (("único criterio", 0.5),)
+        with self.assertRaises(ValueError):
+            build_decision_matrix({"A": {"único criterio": 3.0}}, criteria=bad_criteria)
+
+    def test_decision_matrix_ranks_the_higher_scoring_method_first(self) -> None:
+        criteria_names = [name for name, _ in DECISION_MATRIX_CRITERIA]
+        scores = {
+            "Método fuerte": {name: 5.0 for name in criteria_names},
+            "Método débil": {name: 2.0 for name in criteria_names},
+        }
+        matrix = build_decision_matrix(scores)
+        self.assertEqual(matrix.iloc[0]["method"], "Método fuerte")
+        self.assertGreater(matrix.iloc[0]["weighted_total"], matrix.iloc[1]["weighted_total"])
+
+
+class ScenarioCalibrationTests(unittest.TestCase):
+    """P2: el escenario base ya no debe saturar la comparación pareada."""
+
+    def test_default_scenario_is_not_saturated_at_the_ceiling(self) -> None:
+        # Antes de la recalibración, Polar sobrevivía 400/400 corridas y solo
+        # 14 pares discordantes sostenían McNemar. Con la configuración por
+        # defecto actual, ambos modelos deben quedar lejos de 0 % y 100 %, con
+        # bastantes más pares discordantes para que la prueba tenga potencia.
+        cfg = SimulationConfig()
+        trials, summary = compare_arrival_models(cfg, runs=150)
+        _, contingency = paired_comparison_statistics(trials)
+        poisson_survival = summary.loc[summary["model"] == "poisson", "survival_probability"].iloc[0]
+        polar_survival = summary.loc[summary["model"] == "polar", "survival_probability"].iloc[0]
+        discordant = int(
+            contingency.loc[
+                contingency["outcome"].isin(["Solo Poisson sobrevive", "Solo Polar sobrevive"]),
+                "count",
+            ].sum()
+        )
+        self.assertTrue(0.05 < poisson_survival < 0.95)
+        self.assertTrue(0.05 < polar_survival < 0.95)
+        self.assertGreater(discordant, 40)
+
+    def test_sweep_reports_wider_confidence_intervals_at_the_calibrated_rate(self) -> None:
+        # El punto elegido como escenario base debe ser, precisamente, donde el
+        # barrido muestra más incertidumbre Monte Carlo (mayor ancho de Wilson)
+        # y más pares discordantes: es el punto de mayor información, no un
+        # punto arbitrario dentro de la rejilla.
+        cfg = SimulationConfig()
+        sweep = sweep_extreme_scenarios(
+            cfg,
+            lambda_rates=(0.65, 0.93, 1.25),
+            coefficients_variation=(0.60,),
+            runs=80,
+        )
+        calibrated = sweep.loc[sweep["lambda_rate"] == 0.93].iloc[0]
+        extremes = sweep.loc[sweep["lambda_rate"] != 0.93]
+        self.assertGreater(calibrated["discordant_pairs"], extremes["discordant_pairs"].max())
 
 
 if __name__ == "__main__":

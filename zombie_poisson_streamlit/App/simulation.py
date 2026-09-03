@@ -47,15 +47,22 @@ class SimulationConfig:
     """
 
     duration: float = 90.0  # Horizonte de simulación, en segundos.
-    lambda_rate: float = 0.65  # Intensidad media de llegadas por segundo.
+    # lambda_rate, polar_cv y enemy_dps quedaron recalibrados en P2: el
+    # escenario original (0.65, 0.45, 9.0) saturaba Polar en 400/400
+    # supervivencias, con solo 14 pares discordantes sosteniendo McNemar. Con
+    # estos valores, Poisson sobrevive ~35 % y Polar ~78 % sobre 400 corridas
+    # pareadas (254 pares discordantes en ambas direcciones), lejos de los
+    # extremos 0 y 1 y con potencia estadística real. Ver
+    # ``compare_arrival_models`` / ``paired_comparison_statistics``.
+    lambda_rate: float = 0.93  # Intensidad media de llegadas por segundo.
     arrival_model: ArrivalModel = "poisson"  # Familia temporal seleccionada.
-    polar_cv: float = 0.45  # Coeficiente de variación del modelo lognormal.
+    polar_cv: float = 0.6  # Coeficiente de variación del modelo lognormal.
     player_hp: float = 110.0  # Vida inicial del protagonista.
     player_dps: float = 42.0  # Daño continuo infligido por segundo.
     weapon_range: float = 10.0  # Radio dentro del que puede atacar.
     enemy_hp: float = 42.0  # Vida base antes de la perturbación individual.
     enemy_speed: float = 1.55  # Velocidad radial base en metros/segundo.
-    enemy_dps: float = 9.0  # Daño base de un atacante en contacto.
+    enemy_dps: float = 9.5  # Daño base de un atacante en contacto.
     arena_radius: float = 18.0  # Radio nominal de aparición.
     contact_radius: float = 1.35  # Distancia a la que comienza el daño.
     dt: float = 0.05  # Paso de integración del combate.
@@ -261,6 +268,188 @@ def sample_polar_lognormal_interarrivals(
     mu, sigma = _lognormal_parameters(lambda_rate, coefficient_variation)
     interarrivals = np.exp(mu + sigma * normals)
     return interarrivals, normals, acceptance_rate, proposed_pairs
+
+
+def sample_marsaglia_normals_vectorized(
+    sample_size: int,
+    rng: np.random.Generator,
+    batch_scale: float = 1.35,
+) -> tuple[np.ndarray, float, int]:
+    """Variante vectorizada de Marsaglia Polar, con el mismo contrato de salida.
+
+    ``sample_marsaglia_normals`` propone un par por iteración de un bucle de
+    Python; esa elección de estilo, no el método de aceptación-rechazo en sí,
+    era la causa de que el benchmark original penalizara a Polar. Aquí se
+    propone un lote completo de pares por llamada a NumPy y se filtra con
+    álgebra vectorial, igual que ``sample_exponential_interarrivals`` resuelve
+    la transformada inversa en una sola pasada. El resultado es la misma
+    distribución exacta; solo cambia cuánto trabajo por propuesta delega en C
+    en vez de en el intérprete.
+
+    ``batch_scale`` sobredimensiona cada lote sobre lo que exige la tasa de
+    aceptación teórica (pi/4 ~ 0.785) para que, en la enorme mayoría de las
+    llamadas, una sola generación de lote baste.
+    """
+
+    if sample_size <= 0:
+        raise ValueError("sample_size debe ser positivo")
+    needed_pairs = -(-sample_size // 2)  # techo de sample_size / 2
+    values = np.empty(0, dtype=float)
+    proposed_pairs = 0
+    accepted_pairs = 0
+    while accepted_pairs < needed_pairs:
+        remaining_pairs = needed_pairs - accepted_pairs
+        # pi/4 es la probabilidad teórica de aceptación; el margen evita una
+        # segunda vuelta del bucle en el caso típico sin sobre-generar de más.
+        batch_size = max(64, int(remaining_pairs / (np.pi / 4.0) * batch_scale))
+        pairs = rng.uniform(-1.0, 1.0, size=(batch_size, 2))
+        squared_radius = np.sum(pairs**2, axis=1)
+        mask = (squared_radius > 0.0) & (squared_radius < 1.0)
+        proposed_pairs += batch_size
+        v1 = pairs[mask, 0]
+        v2 = pairs[mask, 1]
+        s = squared_radius[mask]
+        factor = np.sqrt(-2.0 * np.log(s) / s)
+        batch_values = np.empty(v1.size * 2, dtype=float)
+        batch_values[0::2] = v1 * factor
+        batch_values[1::2] = v2 * factor
+        values = np.concatenate([values, batch_values])
+        accepted_pairs += v1.size
+    return (
+        values[:sample_size],
+        accepted_pairs / proposed_pairs,
+        proposed_pairs,
+    )
+
+
+def sample_polar_lognormal_interarrivals_vectorized(
+    lambda_rate: float,
+    coefficient_variation: float,
+    sample_size: int,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, np.ndarray, float, int]:
+    """Igual que ``sample_polar_lognormal_interarrivals`` con Polar vectorizado.
+
+    Existe únicamente para que el benchmark compare implementaciones del mismo
+    nivel de esfuerzo de vectorización; el motor de simulación y la validación
+    estadística siguen usando la versión original, más legible y suficiente
+    para sus tamaños de muestra.
+    """
+
+    if lambda_rate <= 0 or sample_size <= 0:
+        raise ValueError("lambda_rate y sample_size deben ser positivos")
+    if not 0.05 <= coefficient_variation <= 2.0:
+        raise ValueError("coefficient_variation debe estar entre 0.05 y 2.0")
+    normals, acceptance_rate, proposed_pairs = sample_marsaglia_normals_vectorized(
+        sample_size, rng
+    )
+    mu, sigma = _lognormal_parameters(lambda_rate, coefficient_variation)
+    interarrivals = np.exp(mu + sigma * normals)
+    return interarrivals, normals, acceptance_rate, proposed_pairs
+
+
+def sample_box_muller_normals(
+    sample_size: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Genera normales estándar por Box-Muller trigonométrico, vectorizado.
+
+    A diferencia de Marsaglia Polar, Box-Muller no rechaza propuestas: cada par
+    de uniformes ``(U1, U2) ~ U(0,1)`` produce dos normales mediante seno y
+    coseno. Es el segundo método que el enunciado pide comparar contra Polar
+    para la MISMA distribución objetivo (N(0,1)), en lugar de comparar dos
+    procesos de llegada distintos como hacía el benchmark original.
+
+    ``U1`` se recorta lejos de cero para evitar ``log(0)`` sin introducir sesgo
+    perceptible (la probabilidad de caer en el intervalo excluido es del orden
+    de la precisión de máquina).
+    """
+
+    if sample_size <= 0:
+        raise ValueError("sample_size debe ser positivo")
+    pair_count = -(-sample_size // 2)
+    u1 = rng.uniform(np.finfo(float).eps, 1.0, size=pair_count)
+    u2 = rng.uniform(0.0, 1.0, size=pair_count)
+    radius = np.sqrt(-2.0 * np.log(u1))
+    angle = 2.0 * np.pi * u2
+    values = np.empty(pair_count * 2, dtype=float)
+    values[0::2] = radius * np.cos(angle)
+    values[1::2] = radius * np.sin(angle)
+    return values[:sample_size]
+
+
+def compare_normal_generators(
+    sample_size: int = 20_000,
+    benchmark_repetitions: int = 9,
+    seed: int = 77_411,
+    alpha: float = 0.05,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Compara Marsaglia Polar contra Box-Muller para la MISMA distribución.
+
+    Esta es la comparación de métodos que pide el enunciado: dos algoritmos
+    distintos generando exactamente N(0,1) a partir de uniformes, evaluados en
+    bondad de ajuste (KS), sesgo/curtosis, costo de generación y, en el caso de
+    Polar, la fracción de propuestas descartadas por el rechazo.
+
+    Returns:
+        ``tests``: una fila por método con KS contra N(0,1), momentos y su
+        estado de aceptación bajo ``alpha``.
+        ``performance``: medianas de tiempo de generación, en microsegundos
+        por valor, usando implementaciones vectorizadas equivalentes para
+        ambos métodos.
+    """
+
+    if sample_size < 1_000 or benchmark_repetitions < 1:
+        raise ValueError("Se requieren muestra y repeticiones suficientes")
+    seed_sequence = np.random.SeedSequence(seed).spawn(3)
+    polar_rng = np.random.default_rng(seed_sequence[0])
+    box_rng = np.random.default_rng(seed_sequence[1])
+    bench_rng = np.random.default_rng(seed_sequence[2])
+
+    polar_values, acceptance_rate, proposed_pairs = sample_marsaglia_normals_vectorized(
+        sample_size, polar_rng
+    )
+    box_values = sample_box_muller_normals(sample_size, box_rng)
+
+    rows = []
+    for name, values in (("Marsaglia Polar", polar_values), ("Box-Muller", box_values)):
+        ks = stats.kstest(values, "norm")
+        rows.append({
+            "method": name,
+            "ks_statistic": float(ks.statistic),
+            "p_value": float(ks.pvalue),
+            "passes": bool(ks.pvalue >= alpha),
+            "mean": float(values.mean()),
+            "variance": float(values.var(ddof=1)),
+            "skewness": float(stats.skew(values)),
+            "excess_kurtosis": float(stats.kurtosis(values)),
+            "rejected_fraction": (
+                1.0 - acceptance_rate if name == "Marsaglia Polar" else 0.0
+            ),
+        })
+    tests = pd.DataFrame(rows)
+
+    benchmark_rows = []
+    for name, generator in (
+        ("Marsaglia Polar", lambda size, r: sample_marsaglia_normals_vectorized(size, r)[0]),
+        ("Box-Muller", sample_box_muller_normals),
+    ):
+        elapsed = []
+        for _ in range(benchmark_repetitions):
+            local_rng = np.random.default_rng(int(bench_rng.integers(1, 2**31 - 1)))
+            start = perf_counter()
+            generator(sample_size, local_rng)
+            elapsed.append((perf_counter() - start) * 1_000.0)
+        median_ms = float(np.median(elapsed))
+        benchmark_rows.append({
+            "method": name,
+            "sample_size": sample_size,
+            "repetitions": benchmark_repetitions,
+            "median_ms": median_ms,
+            "microseconds_per_value": median_ms * 1_000.0 / sample_size,
+        })
+    performance = pd.DataFrame(benchmark_rows)
+    return tests, performance
 
 
 def _pearson_lag_test(values: np.ndarray) -> tuple[float, float]:
@@ -708,6 +897,11 @@ def validate_arrival_generators(
     ])
 
     # El benchmark usa tamaños idénticos y generadores nuevos en cada repetición.
+    # Ambas rutas están vectorizadas con NumPy al mismo nivel de esfuerzo: la
+    # variante original de Polar (bucle de Python, una propuesta por
+    # iteración) mide estilo de código, no el método de aceptación-rechazo en
+    # sí. Usar ``sample_polar_lognormal_interarrivals_vectorized`` aquí hace que
+    # la comparación de tiempos sea atribuible al algoritmo.
     benchmark_rows: list[dict[str, float | int | str]] = []
     for model in ("Poisson-exponencial", "Polar-lognormal"):
         elapsed: list[float] = []
@@ -718,7 +912,7 @@ def validate_arrival_generators(
             if model == "Poisson-exponencial":
                 sample_exponential_interarrivals(config.lambda_rate, sample_size, local_rng)
             else:
-                sample_polar_lognormal_interarrivals(
+                sample_polar_lognormal_interarrivals_vectorized(
                     config.lambda_rate, config.polar_cv, sample_size, local_rng
                 )
             elapsed.append((perf_counter() - start) * 1_000.0)
@@ -1279,6 +1473,118 @@ def paired_comparison_statistics(
         {"outcome": "Ambos fallan", "count": int(np.sum((survival_poisson == 0) & (survival_polar == 0)))},
     ])
     return pd.DataFrame(effect_rows), contingency
+
+
+def sweep_extreme_scenarios(
+    base_config: SimulationConfig,
+    lambda_rates: tuple[float, ...] = (0.45, 0.93, 1.60),
+    coefficients_variation: tuple[float, ...] = (0.15, 0.60, 1.20),
+    runs: int = 250,
+) -> pd.DataFrame:
+    """Recorre combinaciones extremas de tasa y CV con error Monte Carlo.
+
+    Para cada punto de la rejilla ``lambda_rates x coefficients_variation`` se
+    ejecuta una comparación pareada Poisson-Polar completa (mismas semillas
+    entre modelos) y se reportan ambas probabilidades de supervivencia con su
+    intervalo de Wilson al 95 %, además del número de pares discordantes que
+    sostiene la prueba de McNemar en ese punto. El ancho del intervalo de
+    Wilson es el error Monte Carlo del punto: con ``runs`` fijo, ese ancho es
+    la evidencia de cuánta confianza merece cada celda de la rejilla, no solo
+    su estimación puntual.
+    """
+
+    if runs <= 0:
+        raise ValueError("runs debe ser positivo")
+    rows: list[dict[str, float | int]] = []
+    for lambda_rate in lambda_rates:
+        for cv in coefficients_variation:
+            cfg = replace(base_config, lambda_rate=lambda_rate, polar_cv=cv)
+            cfg.validate()
+            trials, summary = compare_arrival_models(cfg, runs=runs)
+            _, contingency = paired_comparison_statistics(trials)
+            discordant = int(
+                contingency.loc[
+                    contingency["outcome"].isin(
+                        ["Solo Poisson sobrevive", "Solo Polar sobrevive"]
+                    ),
+                    "count",
+                ].sum()
+            )
+            poisson_row = summary.loc[summary["model"] == "poisson"].iloc[0]
+            polar_row = summary.loc[summary["model"] == "polar"].iloc[0]
+            rows.append({
+                "lambda_rate": lambda_rate,
+                "arrivals_per_minute": lambda_rate * 60.0,
+                "polar_cv": cv,
+                "runs": runs,
+                "poisson_survival": float(poisson_row["survival_probability"]),
+                "poisson_ci_width": float(
+                    poisson_row["ci_high"] - poisson_row["ci_low"]
+                ),
+                "polar_survival": float(polar_row["survival_probability"]),
+                "polar_ci_width": float(
+                    polar_row["ci_high"] - polar_row["ci_low"]
+                ),
+                "discordant_pairs": discordant,
+            })
+    return pd.DataFrame(rows)
+
+
+DECISION_MATRIX_CRITERIA: tuple[tuple[str, float], ...] = (
+    # (criterio, peso). Pesos para decidir entre dos métodos que generan
+    # EXACTAMENTE la misma distribución objetivo, N(0,1): Marsaglia Polar y
+    # Box-Muller (ver ``compare_normal_generators``). El ajuste distribucional
+    # pesa más porque es la única razón de ser del generador; el costo y la
+    # eficiencia de propuestas pesan más que la estabilidad numérica porque,
+    # en este proyecto, ambos métodos ya evitan sus respectivos riesgos
+    # conocidos (Polar rechaza en vez de invertir una raíz negativa; Box-Muller
+    # recorta ``U1`` lejos de cero). Los pesos suman 1.0.
+    ("Ajuste a la distribución objetivo (KS)", 0.30),
+    ("Costo computacional (µs/valor, misma vectorización)", 0.25),
+    ("Eficiencia y previsibilidad del costo (fracción no rechazada)", 0.20),
+    ("Robustez numérica (funciones trascendentales, casos de borde)", 0.15),
+    ("Sencillez de implementación y auditoría", 0.10),
+)
+
+
+def build_decision_matrix(
+    generator_scores: dict[str, dict[str, float]],
+    criteria: tuple[tuple[str, float], ...] = DECISION_MATRIX_CRITERIA,
+) -> pd.DataFrame:
+    """Combina puntajes por criterio (1-5) con pesos justificados en un ranking.
+
+    Args:
+        generator_scores: ``{nombre_del_metodo: {criterio: puntaje_1_a_5}}``.
+            Los puntajes deben fijarse a partir de evidencia numérica generada
+            por este mismo módulo (KS, benchmark, tasa de aceptación, pares
+            discordantes), no por apreciación cualitativa.
+        criteria: pares ``(criterio, peso)``; los pesos deben sumar 1.0.
+
+    Returns:
+        Una fila por método con su puntaje ponderado total y el desglose por
+        criterio, ordenada de mayor a menor puntaje.
+    """
+
+    total_weight = sum(weight for _, weight in criteria)
+    if not np.isclose(total_weight, 1.0, atol=1e-6):
+        raise ValueError(f"Los pesos deben sumar 1.0, suman {total_weight}")
+
+    rows = []
+    for method, scores in generator_scores.items():
+        missing = [name for name, _ in criteria if name not in scores]
+        if missing:
+            raise ValueError(f"Faltan puntajes para {method}: {missing}")
+        row: dict[str, float | str] = {"method": method}
+        weighted_total = 0.0
+        for name, weight in criteria:
+            score = float(scores[name])
+            if not 1.0 <= score <= 5.0:
+                raise ValueError(f"{method}/{name} fuera de rango [1, 5]: {score}")
+            row[name] = score
+            weighted_total += weight * score
+        row["weighted_total"] = weighted_total
+        rows.append(row)
+    return pd.DataFrame(rows).sort_values("weighted_total", ascending=False).reset_index(drop=True)
 
 
 def survival_curve(
