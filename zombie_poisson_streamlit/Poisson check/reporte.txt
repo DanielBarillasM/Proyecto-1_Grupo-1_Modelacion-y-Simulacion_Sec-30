@@ -1,0 +1,48 @@
+==============================================================================
+COMPARACIÓN POISSON vs POLAR-LOGNORMAL — TEORÍA vs PRÁCTICA
+==============================================================================
+lambda = 0.93 eventos/s   |   1/lambda (interarribo medio) = 1.0753 s
+Duración T = 90.0 s   |   CV Polar = 0.6   |   semilla = 22193
+Muestra fija para interarribos = 5000   |   calendarios repetidos = 2000
+
+------------------------------------------------------------------------------
+1) MOMENTOS: teórico vs observado (muestra de tamaño fijo)
+------------------------------------------------------------------------------
+                        media teo.  media obs.    var teo.    var obs.  CV teo.  CV obs.
+Poisson-exponencial         1.0753      1.0545      1.1562      1.1146    1.000    1.001
+Polar-lognormal             1.0753      1.0700      0.4162      0.3975    0.600    0.589
+Aceptación Marsaglia Polar: 0.7905  (teórica pi/4 = 0.7854)
+
+------------------------------------------------------------------------------
+2) PRUEBAS FORMALES (alpha = 0.05, corregidas por Holm-Bonferroni)
+------------------------------------------------------------------------------
+Prueba                                           Estadístico         p  p (Holm)  ¿No se rechaza?
+KS interarribos Poisson vs Exponencial(lambda)       0.01216   0.44713   1.00000  sí
+KS normales Marsaglia vs N(0,1)                      0.00933   0.77304   1.00000  sí
+t: media lognormal vs 1/lambda                      -0.58872   0.55608   1.00000  sí
+Correlación rezago-1 (independencia) Poisson         0.00657   0.64248   1.00000  sí
+Correlación rezago-1 (independencia) Polar          -0.00217   0.87831   1.00000  sí
+Indice de dispersion N(T) Poisson                 2017.65175   0.76067   1.00000  sí
+Chi-cuadrada N(T) vs Poisson(lambda*T)              57.38009   0.14270   0.99889  sí
+
+------------------------------------------------------------------------------
+3) EL CONTEO N(T): por qué Poisson y Polar-lognormal no son lo mismo
+------------------------------------------------------------------------------
+lambda*T (referencia) = 83.70
+Poisson:  media(N(T)) = 83.249   var(N(T)) = 84.026   (teoría exige media = var = lambda*T)
+Polar:    media(N(T)) = 83.168   var(N(T)) = 30.282   (es un proceso de renovación: no tiene por qué cumplir media=var=lambda*T)
+Diferencia Polar - lambda*T = -0.532  (igualar E[Delta]=1/lambda no garantiza igualar E[N(T)] en un horizonte finito)
+
+==============================================================================
+CONCLUSIÓN
+==============================================================================
+Con la semilla usada, NINGUNA prueba corregida por Holm rechaza el modelo:
+la práctica (lo simulado) es consistente con la teoría declarada para ambos
+procesos: interarribos exponenciales para Poisson, normales de Marsaglia
+válidas y N(T) compatible con Poisson(lambda*T). No rechazar no es una
+prueba absoluta; solo indica que la muestra no contradice el modelo.
+
+Diferencia estructural (no depende de la semilla): Poisson tiene CV=1 fijo
+y carece de memoria; Polar-lognormal permite fijar el CV libremente, por lo
+que puede ser más regular (CV<1, menos rachas) o más disperso (CV>1) que
+Poisson mantiendo la misma tasa media de llegadas.
