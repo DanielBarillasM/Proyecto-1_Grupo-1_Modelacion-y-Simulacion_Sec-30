@@ -724,6 +724,101 @@ def generator_validation_figure(
     return fig
 
 
+def normal_method_comparison_figure(
+    tests: pd.DataFrame,
+    performance: pd.DataFrame,
+) -> go.Figure:
+    """Compara calidad empírica y costo de Polar frente a Box-Muller.
+
+    El panel izquierdo muestra desviaciones absolutas de los cuatro momentos
+    diagnósticos respecto de una ``N(0,1)``. El derecho muestra el tiempo por
+    valor bajo implementaciones vectorizadas equivalentes. No se comparan los
+    valores p como si un valor mayor implicara un método mejor; KS se conserva
+    en el ``hover`` y solo se interpreta como rechazo o no rechazo.
+    """
+
+    required_tests = {
+        "method", "ks_statistic", "p_value", "passes", "mean", "variance",
+        "skewness", "excess_kurtosis", "rejected_fraction",
+    }
+    required_performance = {"method", "microseconds_per_value"}
+    if missing := required_tests.difference(tests.columns):
+        raise ValueError(f"Faltan columnas de calidad: {sorted(missing)}")
+    if missing := required_performance.difference(performance.columns):
+        raise ValueError(f"Faltan columnas de rendimiento: {sorted(missing)}")
+
+    methods = tests["method"].tolist()
+    colours = [POLAR_COLOR if name == "Marsaglia Polar" else ORANGE for name in methods]
+    diagnostics = {
+        "|media|": np.abs(tests["mean"].to_numpy(dtype=float)),
+        "|varianza - 1|": np.abs(tests["variance"].to_numpy(dtype=float) - 1.0),
+        "|asimetría|": np.abs(tests["skewness"].to_numpy(dtype=float)),
+        "|curtosis exc.|": np.abs(tests["excess_kurtosis"].to_numpy(dtype=float)),
+    }
+    fig = make_subplots(
+        rows=1,
+        cols=2,
+        subplot_titles=("Desviaciones respecto de N(0,1)", "Costo vectorizado"),
+        horizontal_spacing=0.16,
+    )
+    for diagnostic, values in diagnostics.items():
+        fig.add_trace(
+            go.Bar(
+                x=methods,
+                y=values,
+                name=diagnostic,
+                hovertemplate=(
+                    "%{x}<br>" + diagnostic + "=%{y:.5f}<extra></extra>"
+                ),
+            ),
+            row=1,
+            col=1,
+        )
+
+    performance_ordered = performance.set_index("method").loc[methods].reset_index()
+    rejection = tests.set_index("method").loc[methods, "rejected_fraction"] * 100.0
+    fig.add_trace(
+        go.Bar(
+            x=methods,
+            y=performance_ordered["microseconds_per_value"],
+            marker_color=colours,
+            text=[
+                f"{cost:.3f} us · rechazo {rejected:.1f} %"
+                for cost, rejected in zip(
+                    performance_ordered["microseconds_per_value"], rejection
+                )
+            ],
+            textposition="outside",
+            name="Microsegundos por valor",
+            customdata=np.column_stack((
+                tests["ks_statistic"].to_numpy(dtype=float),
+                tests["p_value"].to_numpy(dtype=float),
+            )),
+            hovertemplate=(
+                "%{x}<br>Costo=%{y:.4f} us/valor"
+                "<br>KS D=%{customdata[0]:.5f}"
+                "<br>p=%{customdata[1]:.5f}<extra></extra>"
+            ),
+        ),
+        row=1,
+        col=2,
+    )
+    fig.update_layout(
+        height=470,
+        barmode="group",
+        margin=dict(l=20, r=20, t=75, b=30),
+        paper_bgcolor=PANEL,
+        plot_bgcolor=PANEL,
+        font=dict(color=TEXT),
+        title="Dos métodos para la misma normal estándar",
+        legend=dict(orientation="h", y=1.08, x=0),
+    )
+    fig.update_yaxes(title_text="Desviación absoluta", gridcolor=GRID, row=1, col=1)
+    fig.update_yaxes(title_text="Microsegundos por valor", gridcolor=GRID, row=1, col=2)
+    fig.update_xaxes(gridcolor=GRID)
+    return fig
+
+
 def paired_effects_figure(effects: pd.DataFrame) -> go.Figure:
     """Muestra efectos Poisson menos Polar con IC bootstrap del 95 %."""
 

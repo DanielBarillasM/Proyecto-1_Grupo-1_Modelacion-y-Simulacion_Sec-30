@@ -45,7 +45,9 @@ SAMPLE_SIZE = 5_000         # tamaño de muestra fija para comparar interarribos
 COUNT_REPETITIONS = 2_000   # nro. de calendarios repetidos para validar el conteo N(T)
 SEED = 22193
 ALPHA = 0.05
-OUTPUT_DIR = Path(__file__).resolve().parent / "salidas_comparacion"
+# Los resultados versionados viven junto al script. Usar esta ruta evita crear
+# una carpeta anidada distinta cada vez que se reproduce el experimento.
+OUTPUT_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 REPORT_LINES: list[str] = []
@@ -326,14 +328,15 @@ def main() -> None:
         log("Al menos una prueba fue rechazada tras la corrección de Holm:")
         for n in rechazadas:
             log(f"  - {n}")
-        log("Antes de concluir que el generador falla, prueba con otra semilla o una")
-        log("muestra mayor: con 7 contrastes simultáneos, un rechazo aislado al 5%")
-        log("puede deberse al azar (por eso se usa Holm en vez del p nominal).")
+        log("Antes de concluir que el generador falla, revisa la implementación y")
+        log("repite el protocolo con semillas predeclaradas o una muestra mayor.")
+        log("No se debe elegir una semilla solo porque produzca el resultado deseado;")
+        log("Holm controla los falsos rechazos de la familia de siete contrastes.")
     log()
     log("Diferencia estructural (no depende de la semilla): Poisson tiene CV=1 fijo")
     log("y carece de memoria; Polar-lognormal permite fijar el CV libremente, por lo")
     log("que puede ser más regular (CV<1, menos rachas) o más disperso (CV>1) que")
-    log("Poisson mantiendo la misma tasa media de llegadas.")
+    log("Poisson manteniendo la misma tasa media de llegadas.")
 
     # ------------------------------------------------------------------
     # 4. Gráficas
@@ -407,7 +410,12 @@ def main() -> None:
     fig.savefig(OUTPUT_DIR / "02_conteo_NT_poisson_vs_polar.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
-    (OUTPUT_DIR / "reporte.txt").write_text("\n".join(REPORT_LINES), encoding="utf-8")
+    # Fijar LF evita que cada línea aparezca modificada al regenerar desde
+    # Windows y mantiene el reporte textual portable en el repositorio.
+    with (OUTPUT_DIR / "reporte.txt").open(
+        "w", encoding="utf-8", newline="\n"
+    ) as handle:
+        handle.write("\n".join(REPORT_LINES) + "\n")
     log()
     log(f"Figuras y reporte guardados en: {OUTPUT_DIR.resolve()}")
 

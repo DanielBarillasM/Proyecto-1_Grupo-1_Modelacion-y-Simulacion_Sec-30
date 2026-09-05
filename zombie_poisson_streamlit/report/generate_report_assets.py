@@ -37,6 +37,8 @@ if str(APP_DIR) not in sys.path:
 from simulation import (
     SimulationConfig,
     compare_arrival_models,
+    compare_normal_generators,
+    normal_generator_decision_matrix,
     paired_comparison_statistics,
     simulate,
     survival_curve,
@@ -81,6 +83,18 @@ def save_figure(fig: plt.Figure, filename: str) -> None:
 
     fig.savefig(ASSETS_DIR / filename, dpi=190, bbox_inches="tight")
     plt.close(fig)
+
+
+def write_csv(frame, filename: str) -> None:
+    """Escribe CSV UTF-8 con saltos LF reproducibles en cualquier sistema.
+
+    Abrir el destino con ``newline=""`` evita que Windows convierta el
+    terminador solicitado por pandas en CRLF. Esto mantiene diffs legibles y
+    hace que regenerar evidencia no cambie cada línea por el sistema operativo.
+    """
+
+    with (DATA_DIR / filename).open("w", encoding="utf-8", newline="") as handle:
+        frame.to_csv(handle, index=False, lineterminator="\n")
 
 
 def plot_generator_validation(validation, config: SimulationConfig) -> None:
@@ -209,6 +223,53 @@ def plot_model_comparison(trials, summary) -> None:
     save_figure(fig, "report-model-comparison.png")
 
 
+def plot_normal_method_comparison(tests, performance) -> None:
+    """Compara dos algoritmos que generan la misma normal estándar.
+
+    El panel de ajuste usa desviaciones de momentos, no una clasificación por
+    valor p: una vez que KS no rechaza, un valor p mayor no constituye evidencia
+    de superioridad. El panel de costo usa medianas de nueve repeticiones y deja
+    visible el descarte inherente al método de aceptación--rechazo.
+    """
+
+    methods = tests["method"].tolist()
+    colours = [POLAR if name == "Marsaglia Polar" else ORANGE for name in methods]
+    diagnostics = {
+        "|media|": np.abs(tests["mean"].to_numpy(dtype=float)),
+        "|varianza - 1|": np.abs(tests["variance"].to_numpy(dtype=float) - 1.0),
+        "|asimetría|": np.abs(tests["skewness"].to_numpy(dtype=float)),
+        "|curtosis exc.|": np.abs(tests["excess_kurtosis"].to_numpy(dtype=float)),
+    }
+    fig, axes = plt.subplots(1, 2, figsize=(13.5, 5.6))
+    x = np.arange(len(methods), dtype=float)
+    width = 0.18
+    offsets = np.linspace(-1.5 * width, 1.5 * width, len(diagnostics))
+    for (label, values), offset in zip(diagnostics.items(), offsets):
+        axes[0].bar(x + offset, values, width=width, label=label)
+    axes[0].set_xticks(x, methods)
+    axes[0].set(title="Desviaciones respecto de N(0,1)", ylabel="Desviación absoluta")
+    axes[0].legend(frameon=False, labelcolor=TEXT, fontsize=8)
+
+    ordered_performance = performance.set_index("method").loc[methods]
+    costs = ordered_performance["microseconds_per_value"].to_numpy(dtype=float)
+    bars = axes[1].bar(methods, costs, color=colours, width=0.62)
+    rejected = tests["rejected_fraction"].to_numpy(dtype=float) * 100.0
+    for bar, cost, rejected_percent in zip(bars, costs, rejected):
+        axes[1].text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height(),
+            f"{cost:.3f} us\nrechazo {rejected_percent:.1f} %",
+            ha="center", va="bottom", fontsize=9,
+        )
+    axes[1].set(title="Costo vectorizado", ylabel="Microsegundos por valor")
+    axes[1].set_ylim(0, max(costs) * 1.35)
+    for axis in axes:
+        axis.grid(True, axis="y")
+    fig.suptitle("Marsaglia Polar frente a Box--Muller", fontsize=18, y=1.02)
+    fig.tight_layout()
+    save_figure(fig, "report-normal-method-comparison.png")
+
+
 def plot_survival_curves(config: SimulationConfig) -> None:
     """Evalúa ambos modelos sobre la misma cuadrícula de tasas."""
 
@@ -241,8 +302,8 @@ def plot_survival_curves(config: SimulationConfig) -> None:
     ax.legend(frameon=False, labelcolor=TEXT)
     fig.tight_layout()
     save_figure(fig, "report-survival-curves.png")
-    curves[0].assign(model="poisson").to_csv(DATA_DIR / "curve_poisson.csv", index=False)
-    curves[1].assign(model="polar").to_csv(DATA_DIR / "curve_polar.csv", index=False)
+    write_csv(curves[0].assign(model="poisson"), "curve_poisson.csv")
+    write_csv(curves[1].assign(model="polar"), "curve_polar.csv")
 
 
 def plot_timeline(config: SimulationConfig) -> None:
@@ -286,7 +347,15 @@ def latex_pvalue(value: float) -> str:
     return f"{value:.6f}"
 
 
-def write_generated_results(validation, summary, effects, contingency) -> None:
+def write_generated_results(
+    validation,
+    summary,
+    effects,
+    contingency,
+    normal_tests,
+    normal_performance,
+    normal_decision,
+) -> None:
     """Escribe macros que mantienen tablas y narrativa sincronizadas."""
 
     poisson = summary.loc[summary["model"] == "poisson"].iloc[0]
@@ -323,6 +392,9 @@ def write_generated_results(validation, summary, effects, contingency) -> None:
     polar_perf = validation.performance.loc[
         validation.performance["generator"] == "Polar-lognormal"
     ].iloc[0]
+    normal_quality = normal_tests.set_index("method")
+    normal_cost = normal_performance.set_index("method")
+    normal_scores = normal_decision.set_index("method")
     lines = [
         "% Archivo generado automáticamente; no editar a mano.",
         f"\\newcommand{{\\ResultsDate}}{{{date.today().isoformat()}}}",
@@ -362,14 +434,23 @@ def write_generated_results(validation, summary, effects, contingency) -> None:
         f"\\newcommand{{\\ControlSerialP}}{{{latex_pvalue(float(control['Serial de tercias en el cubo']))}}}",
         f"\\newcommand{{\\PoissonMicros}}{{{float(poisson_perf['microseconds_per_value']):.3f}}}",
         f"\\newcommand{{\\PolarMicros}}{{{float(polar_perf['microseconds_per_value']):.3f}}}",
+        f"\\newcommand{{\\PolarNormalKSP}}{{{latex_number(float(normal_quality.loc['Marsaglia Polar', 'p_value']))}}}",
+        f"\\newcommand{{\\BoxMullerKSP}}{{{latex_number(float(normal_quality.loc['Box-Muller', 'p_value']))}}}",
+        f"\\newcommand{{\\PolarNormalMicros}}{{{float(normal_cost.loc['Marsaglia Polar', 'microseconds_per_value']):.3f}}}",
+        f"\\newcommand{{\\BoxMullerMicros}}{{{float(normal_cost.loc['Box-Muller', 'microseconds_per_value']):.3f}}}",
+        f"\\newcommand{{\\PolarRejectedPercent}}{{{float(normal_quality.loc['Marsaglia Polar', 'rejected_fraction'])*100:.1f}}}",
+        f"\\newcommand{{\\NormalMethodWinner}}{{{normal_decision.iloc[0]['method']}}}",
+        f"\\newcommand{{\\PolarMethodScore}}{{{float(normal_scores.loc['Marsaglia Polar', 'weighted_total']):.3f}}}",
+        f"\\newcommand{{\\BoxMullerMethodScore}}{{{float(normal_scores.loc['Box-Muller', 'weighted_total']):.3f}}}",
         f"\\newcommand{{\\BothSurvive}}{{{int(contingency.iloc[0]['count'])}}}",
         f"\\newcommand{{\\OnlyPoisson}}{{{int(contingency.iloc[1]['count'])}}}",
         f"\\newcommand{{\\OnlyPolar}}{{{int(contingency.iloc[2]['count'])}}}",
         f"\\newcommand{{\\BothFail}}{{{int(contingency.iloc[3]['count'])}}}",
     ]
-    (REPORT_DIR / "generated_results.tex").write_text(
-        "\n".join(lines) + "\n", encoding="utf-8"
-    )
+    with (REPORT_DIR / "generated_results.tex").open(
+        "w", encoding="utf-8", newline="\n"
+    ) as handle:
+        handle.write("\n".join(lines) + "\n")
 
 
 def main() -> None:
@@ -380,23 +461,39 @@ def main() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     config = SimulationConfig()
     validation = validate_arrival_generators(config)
+    normal_tests, normal_performance = compare_normal_generators()
+    normal_decision = normal_generator_decision_matrix(
+        normal_tests, normal_performance
+    )
     trials, summary = compare_arrival_models(config, runs=400)
     effects, contingency = paired_comparison_statistics(trials)
 
-    validation.tests.to_csv(DATA_DIR / "generator_tests.csv", index=False)
-    validation.moments.to_csv(DATA_DIR / "generator_moments.csv", index=False)
-    validation.performance.to_csv(DATA_DIR / "generator_performance.csv", index=False)
-    validation.uniform_control.to_csv(DATA_DIR / "uniform_control.csv", index=False)
-    trials.to_csv(DATA_DIR / "paired_trials.csv", index=False)
-    summary.to_csv(DATA_DIR / "comparison_summary.csv", index=False)
-    effects.to_csv(DATA_DIR / "paired_effects.csv", index=False)
-    contingency.to_csv(DATA_DIR / "survival_contingency.csv", index=False)
+    write_csv(validation.tests, "generator_tests.csv")
+    write_csv(validation.moments, "generator_moments.csv")
+    write_csv(validation.performance, "generator_performance.csv")
+    write_csv(validation.uniform_control, "uniform_control.csv")
+    write_csv(normal_tests, "normal_method_tests.csv")
+    write_csv(normal_performance, "normal_method_performance.csv")
+    write_csv(normal_decision, "normal_method_decision.csv")
+    write_csv(trials, "paired_trials.csv")
+    write_csv(summary, "comparison_summary.csv")
+    write_csv(effects, "paired_effects.csv")
+    write_csv(contingency, "survival_contingency.csv")
 
     plot_generator_validation(validation, config)
+    plot_normal_method_comparison(normal_tests, normal_performance)
     plot_model_comparison(trials, summary)
     plot_survival_curves(config)
     plot_timeline(config)
-    write_generated_results(validation, summary, effects, contingency)
+    write_generated_results(
+        validation,
+        summary,
+        effects,
+        contingency,
+        normal_tests,
+        normal_performance,
+        normal_decision,
+    )
     print("Activos del informe regenerados correctamente.")
     print(summary.to_string(index=False))
     print(effects.to_string(index=False))

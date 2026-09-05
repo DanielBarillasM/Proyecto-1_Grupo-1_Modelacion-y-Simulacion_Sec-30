@@ -45,7 +45,7 @@
     <div class="kicker">Dirección del estudio</div><h2>Objetivos y productos</h2>
     <div class="grid grid3">
       <div class="card"><h3>Modelar</h3><p>Traducir llegadas aleatorias a instantes de aparición matemáticamente justificables.</p></div>
-      <div class="card"><h3>Comparar</h3><p>Contrastar Poisson con una renovación Polar-lognormal bajo la misma tasa media.</p></div>
+      <div class="card"><h3>Comparar</h3><p>Contrastar procesos de llegada y, por separado, Polar con Box--Muller para la misma normal.</p></div>
       <div class="card"><h3>Estimar</h3><p>Calcular probabilidad de supervivencia e intervalos de confianza mediante Monte Carlo.</p></div>
       <div class="card"><h3>Visualizar</h3><p>Representar arena, posiciones, alcance, peligro y telemetría en una escena 3D.</p></div>
       <div class="card"><h3>Verificar</h3><p>Probar propiedades estadísticas, reproducibilidad y coherencia de eventos.</p></div>
@@ -76,7 +76,7 @@
         <div class="metric"><small>Propiedad</small><b>Sin memoria</b></div>
       </div>
     </div>
-    <div class="callout"><strong>Interpretación base:</strong> 39 llegadas/min equivalen a $\lambda=0.65$ s$^{-1}$ y a un interarribo medio de 1.538 s.</div>
+    <div class="callout"><strong>Interpretación base:</strong> 55.8 llegadas/min equivalen a $\lambda=0.93$ s$^{-1}$ y a un interarribo medio de 1.075 s.</div>
   </section>
 
   <section class="slide" data-title="Transformada inversa">
@@ -84,8 +84,8 @@
     <p class="lead">La función acumulada exponencial se invierte para transformar números uniformes en segundos de espera.</p>
     <div class="formula">$$F_\Delta(x)=1-e^{-\lambda x}$$</div>
     <div class="flow"><div class="node">$U=1-e^{-\lambda x}$</div><div class="arrow">→</div><div class="node">$e^{-\lambda x}=1-U$</div><div class="arrow">→</div><div class="node">$x=-\ln(1-U)/\lambda$</div></div>
-    <div class="formula">$$\boxed{\Delta_i=-\frac{\ln(U_i)}{\lambda}},\qquad U_i\sim U(0,1)$$</div>
-    <div class="grid"><div class="card"><h3>Ejemplo</h3><p>Con $\lambda=0.65$ y $U=0.35$:</p><div class="formula">$\Delta\approx1.615$ s</div></div><div class="card"><h3>Acumulación</h3><p>El tiempo de aparición es la suma de esperas:</p><div class="formula">$t_i=t_{i-1}+\Delta_i$</div></div></div>
+    <div class="formula">$$V_i=1-U_i\sim U(0,1),\qquad \boxed{\Delta_i=-\frac{\ln(V_i)}{\lambda}}$$</div>
+    <div class="grid"><div class="card"><h3>Ejemplo</h3><p>Con $\lambda=0.93$ y $V=0.35$:</p><div class="formula">$\Delta\approx1.129$ s</div></div><div class="card"><h3>Acumulación</h3><p>El tiempo de aparición es la suma de esperas:</p><div class="formula">$t_i=t_{i-1}+\Delta_i$</div></div></div>
   </section>
 
   <section class="slide" data-title="Método polar">
@@ -103,7 +103,7 @@
     <div class="formula blue-line">$$\Delta_i=e^{\mu+\sigma Z_i}$$</div>
     <div class="grid">
       <div class="card"><h3>Media compartida</h3><div class="formula">$$\mathbb E[\Delta]=\frac{1}{\lambda}$$</div><p>La frecuencia promedio es comparable.</p></div>
-      <div class="card"><h3>Variabilidad controlada</h3><div class="formula blue-line">$$\sigma^2=\ln(1+CV^2)$$</div><p>El escenario base usa $CV=0.45$.</p></div>
+      <div class="card"><h3>Variabilidad controlada</h3><div class="formula blue-line">$$\sigma^2=\ln(1+CV^2)$$</div><p>El escenario base usa $CV=0.60$.</p></div>
     </div>
     <div class="formula">$$\mu=\ln(1/\lambda)-\frac{\sigma^2}{2}$$</div>
   </section>
@@ -111,7 +111,7 @@
   <section class="slide" data-title="Comparación justa">
     <div class="kicker">Diseño del contraste</div><h2>Misma media, distinta estructura temporal</h2>
     <table class="table"><thead><tr><th>Característica</th><th>Poisson</th><th>Polar-lognormal</th></tr></thead><tbody>
-      <tr><td>Interarribo</td><td>Exponencial</td><td>Lognormal</td></tr><tr><td>Media</td><td>$1/\lambda$</td><td>$1/\lambda$</td></tr><tr><td>CV base</td><td>1</td><td>0.45</td></tr><tr><td>Memoria</td><td>Sin memoria</td><td>Depende del tiempo transcurrido</td></tr><tr><td>Conteo</td><td>Poisson exacto</td><td>Renovación, no Poisson</td></tr><tr><td>Patrón esperado</td><td>Rachas y pausas</td><td>Llegadas más regulares</td></tr>
+      <tr><td>Interarribo</td><td>Exponencial</td><td>Lognormal</td></tr><tr><td>Media</td><td>$1/\lambda$</td><td>$1/\lambda$</td></tr><tr><td>CV base</td><td>1</td><td>0.60</td></tr><tr><td>Memoria</td><td>Sin memoria</td><td>Depende del tiempo transcurrido</td></tr><tr><td>Conteo</td><td>Poisson exacto</td><td>Renovación, no Poisson</td></tr><tr><td>Patrón esperado</td><td>Rachas y pausas</td><td>Llegadas más regulares</td></tr>
     </tbody></table>
     <div class="callout"><strong>Criterio:</strong> Poisson es el modelo principal por interpretación y parsimonia cuando son razonables la tasa constante y la independencia; no porque garantice un resultado de juego específico.</div>
   </section>
@@ -129,13 +129,25 @@
   </section>
 
   <section class="slide" data-title="Validación formal">
-    <div class="kicker">Calidad de los generadores</div><h2>Siete contrastes, no solo un histograma</h2>
+    <div class="kicker">Calidad de los generadores</div><h2>Dieciocho contrastes y un control negativo</h2>
     <div class="split-image">
       <div class="image-frame"><img src="../assets/report-generator-validation.png" alt="Validación estadística de los generadores"></div>
       <div>
-        <div class="card"><h3>Bondad de ajuste</h3><p>KS exponencial: $p=0.1863$. KS normal y lognormal: $p=0.9236$.</p></div>
-        <div class="card" style="margin-top:12px"><h3>Independencia y conteo</h3><p>Rezago uno, aceptación Polar e índice de dispersión tampoco se rechazan con $\alpha=0.05$.</p></div>
-        <div class="callout"><strong>Lectura:</strong> no rechazar el modelo significa que la muestra no lo contradice; no demuestra perfección absoluta.</div>
+        <div class="card"><h3>Tres niveles</h3><p>Fuente uniforme PCG64 y LCG propio; transformaciones exponencial y normal; conteo Poisson completo.</p></div>
+        <div class="card" style="margin-top:12px"><h3>Decisión responsable</h3><p>Ninguno se rechaza tras Holm. El control contador aprueba forma, pero falla las tres pruebas de dependencia.</p></div>
+        <div class="callout"><strong>Lectura:</strong> Holm controla la multiplicidad sin exigir independencia. No rechazar significa que la muestra no contradice el modelo; no demuestra perfección.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide" data-title="Polar vs Box-Muller">
+    <div class="kicker">Comparación algorítmica controlada</div><h2>Dos métodos, la misma $N(0,1)$</h2>
+    <div class="split-image">
+      <div class="image-frame"><img src="../assets/report-normal-method-comparison.png" alt="Comparación de Marsaglia Polar y Box-Muller"></div>
+      <div>
+        <div class="card"><h3>Ajuste</h3><p>KS no rechaza Polar ($p=0.1337$) ni Box--Muller ($p=0.3288$). Un valor $p$ mayor no significa mejor generador.</p></div>
+        <div class="card" style="margin-top:12px"><h3>Costo y eficiencia</h3><p>0.105 frente a 0.051 µs/valor; Polar descarta 21.8 % de propuestas y Box--Muller ninguna.</p></div>
+        <div class="callout"><strong>Matriz:</strong> Box--Muller obtiene 4.800/5 y Polar 3.908/5. Polar se conserva por su valor didáctico como aceptación--rechazo.</div>
       </div>
     </div>
   </section>
@@ -154,7 +166,7 @@
   <section class="slide" data-title="Parámetros">
     <div class="kicker">Escenario base</div><h2>Parámetros con unidades claras</h2>
     <table class="table"><thead><tr><th>Grupo</th><th>Parámetro</th><th>Valor</th><th>Unidad</th></tr></thead><tbody>
-      <tr><td>Llegadas</td><td>Tasa</td><td>39</td><td>llegadas/min</td></tr><tr><td>Misión</td><td>Horizonte</td><td>90</td><td>s</td></tr><tr><td>Polar</td><td>Coeficiente de variación</td><td>0.45</td><td>adimensional</td></tr><tr><td>Protagonista</td><td>HP / DPS / alcance</td><td>110 / 42 / 10</td><td>HP / HP s$^{-1}$ / m</td></tr><tr><td>Infectado</td><td>HP / velocidad / DPS</td><td>42 / 1.55 / 9</td><td>HP / m s$^{-1}$ / HP s$^{-1}$</td></tr><tr><td>Numérico</td><td>Paso temporal</td><td>0.05</td><td>s</td></tr>
+      <tr><td>Llegadas</td><td>Tasa</td><td>55.8</td><td>llegadas/min</td></tr><tr><td>Misión</td><td>Horizonte</td><td>90</td><td>s</td></tr><tr><td>Polar</td><td>Coeficiente de variación</td><td>0.60</td><td>adimensional</td></tr><tr><td>Protagonista</td><td>HP / DPS / alcance</td><td>110 / 42 / 10</td><td>HP / HP s$^{-1}$ / m</td></tr><tr><td>Infectado</td><td>HP / velocidad / DPS</td><td>42 / 1.55 / 9.5</td><td>HP / m s$^{-1}$ / HP s$^{-1}$</td></tr><tr><td>Numérico</td><td>Paso temporal</td><td>0.05</td><td>s</td></tr>
     </tbody></table>
     <div class="grid grid3"><div class="card"><h3>Validación</h3><p>Positividad y relaciones entre radios.</p></div><div class="card"><h3>Reproducibilidad</h3><p>Semilla controlada y flujos aleatorios separados.</p></div><div class="card"><h3>Precisión</h3><p>El usuario puede reducir $dt$ y observar el costo.</p></div></div>
   </section>
@@ -187,10 +199,10 @@
   <section class="slide" data-title="Resultados">
     <div class="kicker">Escenario base, 400 partidas por modelo</div><h2>Resultados reproducibles de referencia</h2>
     <div class="grid">
-      <div><div class="bars"><div class="bar" style="height:96.5%"><span>96.5 %</span><label>Poisson</label><i class="ci" style="height:3.7%;top:-1%"></i></div><div class="bar polar" style="height:100%"><span>100 %</span><label>Polar-lognormal</label><i class="ci" style="height:1%;top:0"></i></div></div></div>
-      <div><table class="table"><thead><tr><th>Métrica</th><th>Poisson</th><th>Polar</th></tr></thead><tbody><tr><td>IC 95 %</td><td>[94.2, 97.9] %</td><td>[99.0, 100] %</td></tr><tr><td>Tiempo medio</td><td>88.528 s</td><td>90.000 s</td></tr><tr><td>Llegadas medias</td><td>57.133</td><td>57.778</td></tr><tr><td>Pico activo medio</td><td>9.483</td><td>6.483</td></tr></tbody></table></div>
+      <div><div class="bars"><div class="bar" style="height:35.2%"><span>35.2 %</span><label>Poisson</label><i class="ci" style="height:9.4%;top:-4.7%"></i></div><div class="bar polar" style="height:77.8%"><span>77.8 %</span><label>Polar-lognormal</label><i class="ci" style="height:8.2%;top:-4.1%"></i></div></div></div>
+      <div><table class="table"><thead><tr><th>Métrica</th><th>Poisson</th><th>Polar</th></tr></thead><tbody><tr><td>IC 95 %</td><td>[30.7, 40.1] %</td><td>[73.4, 81.6] %</td></tr><tr><td>Tiempo medio</td><td>64.694 s</td><td>83.666 s</td></tr><tr><td>Llegadas medias</td><td>60.203</td><td>77.000</td></tr><tr><td>Pico activo medio</td><td>14.220</td><td>11.225</td></tr></tbody></table></div>
     </div>
-    <div class="callout"><strong>Hallazgo:</strong> efecto Poisson - Polar = -3.5 puntos porcentuales, IC bootstrap [-5.5, -1.8], McNemar exacta $p=0.000122$.</div>
+    <div class="callout"><strong>Hallazgo:</strong> efecto Poisson - Polar = -42.5 puntos porcentuales, IC bootstrap [-48.8, -35.8], McNemar exacta $p=1.697\times10^{-28}$.</div>
   </section>
 
   <section class="slide" data-title="Efectos pareados">
@@ -198,10 +210,10 @@
     <div class="split-image">
       <div class="image-frame"><img src="../assets/report-model-comparison.png" alt="Comparación pareada de supervivencia y concurrencia"></div>
       <div>
-        <div class="metric"><small>Ambos sobreviven</small><b>386</b></div>
-        <div class="metric"><small>Solo Polar sobrevive</small><b>14</b></div>
-        <div class="metric"><small>Solo Poisson / ambos fallan</small><b>0 / 0</b></div>
-        <div class="callout"><strong>Congestión:</strong> Poisson produjo un pico medio 3.0 enemigos mayor; Wilcoxon pareada da $p&lt;10^{-60}$.</div>
+        <div class="metric"><small>Ambos sobreviven</small><b>99</b></div>
+        <div class="metric"><small>Solo Polar sobrevive</small><b>212</b></div>
+        <div class="metric"><small>Solo Poisson / ambos fallan</small><b>42 / 47</b></div>
+        <div class="callout"><strong>Congestión:</strong> Poisson produjo un pico medio 2.995 enemigos mayor; Wilcoxon pareada da $p=7.007\times10^{-39}$.</div>
       </div>
     </div>
   </section>
@@ -222,9 +234,9 @@
   </section>
 
   <section class="slide" data-title="Verificación">
-    <div class="kicker">Calidad del desarrollo</div><h2>Doce pruebas automáticas</h2>
+    <div class="kicker">Calidad del desarrollo</div><h2>Veintiocho pruebas automáticas</h2>
     <div class="grid grid3">
-      <div class="card"><h3>Propiedad Poisson</h3><p>Media, varianza, KS y dispersión.</p></div><div class="card"><h3>Marsaglia y lognormal</h3><p>KS, momentos, aceptación e independencia.</p></div><div class="card"><h3>Reproducibilidad</h3><p>Igual semilla, igual trayectoria.</p></div><div class="card"><h3>Límite temporal</h3><p>Ningún daño se aplica después de $T$.</p></div><div class="card"><h3>Comparación pareada</h3><p>Dirección, contingencia y semillas.</p></div><div class="card"><h3>Precisión numérica</h3><p>Resultado estable al reducir $dt$.</p></div>
+      <div class="card"><h3>Propiedad Poisson</h3><p>Media, varianza, KS y dispersión.</p></div><div class="card"><h3>Fuente uniforme</h3><p>PCG64, LCG propio y control negativo.</p></div><div class="card"><h3>Polar y Box--Muller</h3><p>Ajuste compartido, aceptación y matriz.</p></div><div class="card"><h3>Límite temporal</h3><p>Ningún daño se aplica después de $T$.</p></div><div class="card"><h3>Comparación pareada</h3><p>Dirección, contingencia y semillas.</p></div><div class="card"><h3>Calibración</h3><p>Escenario base no saturado y extremos.</p></div>
     </div>
     <div class="formula">$\texttt{python -m unittest discover -s tests -v}$</div>
   </section>
@@ -236,12 +248,12 @@
 
   <section class="slide" data-title="Conclusiones">
     <div class="kicker">Cierre</div><h2>Conclusiones</h2>
-    <div class="grid grid3"><div class="card"><h3>1. Conexión</h3><p>La variable continua $\Delta_i$ controla directamente el siguiente evento visible.</p></div><div class="card"><h3>2. Variabilidad</h3><p>Igual tasa media no implica igual concurrencia ni igual supervivencia.</p></div><div class="card"><h3>3. Inferencia</h3><p>Monte Carlo e intervalos evitan concluir desde una sola partida.</p></div><div class="card"><h3>4. Ingeniería</h3><p>La separación de motor, visuales e interfaz facilita verificación.</p></div><div class="card"><h3>5. Visualización</h3><p>Las mallas procedurales mantienen la experiencia dentro de Streamlit.</p></div><div class="card"><h3>6. Elección</h3><p>Poisson es principal por sus supuestos e interpretabilidad.</p></div></div>
+    <div class="grid grid3"><div class="card"><h3>1. Conexión</h3><p>La variable continua $\Delta_i$ controla directamente el siguiente evento visible.</p></div><div class="card"><h3>2. Variabilidad</h3><p>Igual tasa media no implica igual concurrencia ni igual supervivencia.</p></div><div class="card"><h3>3. Inferencia</h3><p>Monte Carlo e intervalos evitan concluir desde una sola partida.</p></div><div class="card"><h3>4. Métodos</h3><p>Box--Muller fue más eficiente; Polar conserva valor didáctico.</p></div><div class="card"><h3>5. Visualización</h3><p>Las mallas procedurales mantienen la experiencia dentro de Streamlit.</p></div><div class="card"><h3>6. Elección</h3><p>Poisson es principal por sus supuestos e interpretabilidad.</p></div></div>
   </section>
 
   <section class="slide" data-title="Demostración">
-    <div class="kicker">Ruta de exposición</div><h2>Demostración en cinco pasos</h2>
-    <div class="flow"><div class="node">1. Configurar</div><div class="arrow">→</div><div class="node">2. Simular misión</div><div class="arrow">→</div><div class="node">3. Explorar 3D</div><div class="arrow">→</div><div class="node">4. Comparar modelos</div><div class="arrow">→</div><div class="node">5. Ejecutar Monte Carlo</div></div>
+    <div class="kicker">Ruta de exposición</div><h2>Demostración en seis pasos</h2>
+    <div class="flow"><div class="node">1. Configurar</div><div class="arrow">→</div><div class="node">2. Simular</div><div class="arrow">→</div><div class="node">3. Explorar 3D</div><div class="arrow">→</div><div class="node">4. Validar</div><div class="arrow">→</div><div class="node">5. Comparar</div><div class="arrow">→</div><div class="node">6. Monte Carlo</div></div>
     <div class="formula">$\texttt{streamlit run App/app.py}$</div>
     <p class="lead">Mostrar la tabla de variables generadas, cambiar la tasa, conservar la semilla y explicar por qué el porcentaje debe leerse junto con su intervalo de confianza.</p>
     <div class="callout"><strong>Trabajo futuro:</strong> proceso de Poisson no homogéneo $\lambda(t)$, movimiento del protagonista, obstáculos funcionales y una versión 3D independiente en Panda3D.</div>

@@ -1,19 +1,19 @@
 generator,test,statistic,p_value,alpha,passes,p_holm,passes_holm
-Fuente uniforme PCG64,Ji-cuadrada de uniformidad,13.459999999999999,0.8142124481691982,0.05,True,1.0,True
+Fuente uniforme PCG64,Ji-cuadrada de uniformidad,13.459999999999999,0.8142124481691981,0.05,True,1.0,True
 Fuente uniforme PCG64,"KS contra U(0,1)",0.015335486526845021,0.30061618229517195,0.05,True,1.0,True
 Fuente uniforme PCG64,Rachas arriba/abajo,-0.12502832994062257,0.9005011222631543,0.05,True,1.0,True
 Fuente uniforme PCG64,Ljung-Box rezagos 1-5,4.355801392028838,0.4994053010665571,0.05,True,1.0,True
 Fuente uniforme PCG64,Serial de tercias en el cubo,62.5648912228057,0.4917751684762319,0.05,True,1.0,True
-LCG propio (MINSTD),Ji-cuadrada de uniformidad,18.479999999999997,0.4906192401201528,0.05,True,1.0,True
+LCG propio (MINSTD),Ji-cuadrada de uniformidad,18.479999999999997,0.4906192401201527,0.05,True,1.0,True
 LCG propio (MINSTD),"KS contra U(0,1)",0.010090075157857537,0.8061666494035333,0.05,True,1.0,True
 LCG propio (MINSTD),Rachas arriba/abajo,1.0377351385071145,0.2993933810700248,0.05,True,1.0,True
-LCG propio (MINSTD),Ljung-Box rezagos 1-5,4.5029361893413915,0.47949068218487767,0.05,True,1.0,True
+LCG propio (MINSTD),Ljung-Box rezagos 1-5,4.5029361893413915,0.47949068218487756,0.05,True,1.0,True
 LCG propio (MINSTD),Serial de tercias en el cubo,56.70742685671418,0.6986339906086956,0.05,True,1.0,True
-Poisson-exponencial,KS contra Exponencial,0.017179281795037804,0.18634385474888626,0.05,True,1.0,True
-Poisson-exponencial,Correlación de rezago 1,0.012705122667013142,0.4218456781394753,0.05,True,1.0,True
+Poisson-exponencial,KS contra Exponencial,0.017179281795037915,0.1863438547488805,0.05,True,1.0,True
+Poisson-exponencial,Correlación de rezago 1,0.012705122667013147,0.4218456781394758,0.05,True,1.0,True
 Marsaglia Polar,"KS de Z contra Normal(0,1)",0.008642305662566852,0.9236248377007695,0.05,True,1.0,True
-Marsaglia Polar,Aceptación contra pi/4,0.7765,0.1715561947593956,0.05,True,1.0,True
-Polar-lognormal,Media contra 1/lambda,-0.2759821098677926,0.7825760675897222,0.05,True,1.0,True
-Polar-lognormal,Correlación de rezago 1,0.001980375446050936,0.9003689736220887,0.05,True,1.0,True
-Conteo Poisson,Índice de dispersión,577.5873903539898,0.5439483434617046,0.05,True,1.0,True
-Conteo Poisson,Ji-cuadrada contra pmf Poisson,35.467242824936875,0.35266975065682454,0.05,True,1.0,True
+Marsaglia Polar,Aceptación contra pi/4,0.7765,0.17155619475937728,0.05,True,1.0,True
+Polar-lognormal,Media contra 1/lambda,-0.3640472327860726,0.7158419852054175,0.05,True,1.0,True
+Polar-lognormal,Correlación de rezago 1,0.0004258417967471437,0.9785228909678895,0.05,True,1.0,True
+Conteo Poisson,Índice de dispersión,566.3525894031814,0.34640404442859585,0.05,True,1.0,True
+Conteo Poisson,Ji-cuadrada contra pmf Poisson,30.836685716181922,0.7887325269558856,0.05,True,1.0,True

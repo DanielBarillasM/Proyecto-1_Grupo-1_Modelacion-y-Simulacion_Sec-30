@@ -94,9 +94,14 @@ un proceso de renovación con interarribos lognormales; las normales auxiliares
 se obtienen mediante Marsaglia Polar. Ambos modelos comparten tiempo medio entre
 llegadas, pero difieren en variabilidad y memoria.
 
+Para satisfacer una comparación algorítmica controlada, Marsaglia Polar también
+se enfrenta a Box--Muller generando la misma $N(0,1)$. Esta separación evita
+atribuir a un algoritmo las diferencias que en realidad proceden de dos
+distribuciones de interarribo distintas.
+
 La versión auditada valida la cadena completa: primero la fuente uniforme que
 alimenta a ambos métodos, después las transformaciones y por último el conteo del
-calendario, con \TestCount{} contrastes que no se solapan entre sí y corrección
+calendario, con \TestCount{} contrastes sin duplicar el mismo estadístico y corrección
 por multiplicidad; comparación pareada con McNemar, Wilcoxon y bootstrap;
 intervalos de Wilson; benchmark de generación; corrección del límite temporal;
 figuras reproducibles y una escena tridimensional. En el escenario base,
@@ -153,6 +158,8 @@ temporal sobre la congestión.
   \item Generar interarribos exponenciales mediante transformada inversa.
   \item Implementar Marsaglia Polar y convertir sus normales en tiempos
         lognormales positivos.
+  \item Comparar Marsaglia Polar y Box--Muller bajo la misma distribución
+        objetivo, con ajuste, costo y eficiencia de propuestas.
   \item Verificar distribución, momentos, independencia, dispersión y
         aceptación de los generadores.
   \item Comparar modelos bajo la misma media mediante diseño pareado.
@@ -243,6 +250,24 @@ se aplica:
 
 Así, $\mathbb{E}[\Delta]=1/\lambda$ y $c$ controla el CV.
 
+\subsection{Box--Muller como comparador algorítmico}
+
+Para separar la elección del algoritmo de la elección del modelo, se implementa
+Box--Muller trigonométrico. Para $U_1,U_2\sim U(0,1)$ independientes:
+
+\begin{equation}
+R=\sqrt{-2\ln U_1},\qquad \Theta=2\pi U_2,
+\end{equation}
+\begin{equation}
+Z_1=R\cos\Theta,\qquad Z_2=R\sin\Theta.
+\end{equation}
+
+Los dos resultados son normales estándar independientes. La implementación
+acota $U_1$ por encima del cero de máquina para que $\ln U_1$ permanezca
+definido. A diferencia de Polar, Box--Muller no rechaza propuestas; a cambio
+evalúa seno y coseno. Ambas implementaciones están vectorizadas para que el
+benchmark compare estrategias equivalentes y no un bucle Python contra NumPy.
+
 \subsection{Conteo de renovación}
 
 Igualar $\mathbb{E}[\Delta]$ iguala la tasa de largo plazo, pero en una
@@ -302,15 +327,23 @@ contacto exactamente al cierre y confirma que ya no puede causar daño posterior
 \toprule
 Parámetro & Valor & Unidad & Parámetro & Valor & Unidad \\
 \midrule
-Horizonte & 90 & s & Tasa & 39 & llegadas/min \\
-CV Polar & 0.45 & --- & HP protagonista & 110 & HP \\
+Horizonte & 90 & s & Tasa & 55.8 & llegadas/min \\
+CV Polar & 0.60 & --- & HP protagonista & 110 & HP \\
 DPS protagonista & 42 & HP/s & Alcance & 10 & m \\
 HP infectado & 42 & HP & Velocidad & 1.55 & m/s \\
-DPS infectado & 9 & HP/s & Paso $dt$ & 0.05 & s \\
+DPS infectado & 9.5 & HP/s & Paso $dt$ & 0.05 & s \\
 Semilla & 22193 & --- & Radio arena & 18 & m \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+Los valores anteriores son una \textbf{calibración de demostración}, no una
+estimación a partir de telemetría real. La configuración previa saturaba la
+supervivencia cerca del 100\,\% y ocultaba diferencias. Se eligió
+$\lambda=0.93$ s$^{-1}$, $CV=0.60$ y 9.5 HP/s para colocar ambos modelos lejos
+de los techos 0 y 1, aumentar pares discordantes y hacer informativa la
+comparación; la sección de sensibilidad impide presentar ese punto como una
+conclusión universal.
 
 \section{Diseño experimental}
 
@@ -353,11 +386,13 @@ es el mismo número escrito dos veces. Lo que el KS de $Z$ no puede detectar es 
 error en la parametrización, porque $\mu$ y $\sigma$ no intervienen en él; por eso
 se contrasta aparte que $E[\Delta]=1/\lambda$.
 
-\emph{Por qué se corrige por multiplicidad.} Con \TestCount{} contrastes
-simultáneos al 5\,\%, la probabilidad de que al menos uno se rechace por azar
-supera el 60\,\%. La decisión se toma sobre el valor $p$ ajustado por
-Holm-Bonferroni, que controla la tasa de error por familia sin suponer
-independencia entre las pruebas.
+\emph{Por qué se corrige por multiplicidad.} Si los \TestCount{} contrastes
+fueran independientes y todas las hipótesis nulas fueran ciertas,
+$1-(1-0.05)^{18}\approx60.3\,\%$ sería la probabilidad ilustrativa de al menos
+un falso rechazo. Como varias pruebas comparten muestras, esa cifra no es la
+probabilidad exacta de este experimento. La decisión se toma sobre el valor $p$
+ajustado por Holm--Bonferroni, que controla la tasa de error por familia sin
+suponer independencia entre las pruebas.
 
 No rechazar $H_0$ no demuestra perfección; indica que la muestra no contradice
 el modelo bajo el contraste utilizado.
@@ -469,6 +504,42 @@ La mediana fue \PoissonMicros\ microsegundos por interarribo exponencial y
 \PolarMicros\ microsegundos por valor Polar-lognormal. El benchmark depende
 del equipo, pero evidencia el costo del rechazo y las transformaciones de Polar.
 
+\subsection{Comparación directa Marsaglia Polar--Box--Muller}
+
+Poisson--exponencial y Polar--lognormal no son dos algoritmos para una misma
+variable: son dos modelos de llegada. Para aislar el método computacional se
+generaron 20,000 observaciones $N(0,1)$ con Marsaglia Polar y con Box--Muller,
+y se cronometraron nueve repeticiones vectorizadas. KS no rechazó ninguno
+($p=\PolarNormalKSP$ y $p=\BoxMullerKSP$, respectivamente). Esos valores $p$
+se usan como umbral de compatibilidad, no como ranking de calidad.
+
+\begin{table}[H]
+\centering
+\caption{Dos métodos para la misma distribución normal estándar.}
+\begin{tabular}{lrrrr}
+\toprule
+Método & KS $p$ & $\mu$s/valor & Rechazo & Puntaje / 5 \\
+\midrule
+Marsaglia Polar & \PolarNormalKSP & \PolarNormalMicros & \PolarRejectedPercent\,\% & \PolarMethodScore \\
+Box--Muller & \BoxMullerKSP & \BoxMullerMicros & 0\,\% & \BoxMullerMethodScore \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La matriz pondera ajuste (0.30), costo (0.25), eficiencia y previsibilidad
+(0.20), robustez numérica (0.15) y sencillez de auditoría (0.10). En el equipo
+de referencia favorece a \NormalMethodWinner. El resultado de tiempo es
+descriptivo y debe reproducirse en cada equipo. Polar sigue siendo pedagógicamente
+pertinente porque materializa aceptación--rechazo y su tasa teórica $\pi/4$.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{report-normal-method-comparison.png}
+  \caption{Desviaciones de momentos y costo vectorizado para dos generadores de
+  $N(0,1)$. No se ordenan métodos por el tamaño del valor $p$.}
+  \label{fig:normal-methods}
+\end{figure}
+
 \subsection{Supervivencia y congestión}
 
 \begin{table}[H]
@@ -524,7 +595,7 @@ existe evidencia de diferencia en este escenario. La concurrencia fue
 \end{figure}
 
 Una sola tasa no produce una conclusión universal. Al aumentar $\lambda$, la
-presión supera la capacidad ofensiva y cae la supervivencia. Con CV 0.45,
+presión supera la capacidad ofensiva y cae la supervivencia. Con CV 0.60,
 Polar-lognormal retrasa rachas, pero esa ventaja pertenece al escenario.
 
 \subsection{Trayectoria individual}
@@ -553,7 +624,7 @@ Fundamento & Proceso de conteo exacto & Proceso de renovación \\
 Ajuste & No rechazado & $Z$ normal y media calibrada \\
 Interpretación & Un parámetro; relación exacta & Media y CV controlables \\
 Costo & \PoissonMicros\ $\mu$s/valor & \PolarMicros\ $\mu$s/valor \\
-Rachas & CV 1; mayor concurrencia & CV 0.45; mayor regularidad \\
+Rachas & CV 1; mayor concurrencia & CV 0.60; mayor regularidad \\
 Uso & Independencia y tasa constante & Datos con regularidad positiva \\
 \bottomrule
 \end{tabularx}
@@ -584,7 +655,7 @@ futuro, no una deuda de esta entrega.
 
 \section{Verificación}
 
-La suite contiene veintiuna pruebas:
+La suite contiene 28 pruebas automatizadas. Sus familias son:
 
 \begin{enumerate}
   \item reproducibilidad Poisson;
@@ -606,7 +677,11 @@ La suite contiene veintiuna pruebas:
   \item estabilidad al reducir $dt$;
   \item ausencia de daño después de $T$;
   \item dirección y contingencia pareadas;
-  \item límites del intervalo de Wilson.
+  \item límites del intervalo de Wilson;
+  \item generación Polar vectorizada y su aceptación teórica;
+  \item ajuste compartido de Polar y Box--Muller a $N(0,1)$;
+  \item validez y ordenamiento de la matriz de decisión;
+  \item escenario base no saturado y barrido de calibración.
 \end{enumerate}
 
 \texttt{streamlit.testing} verifica además carga, misión, validación,
@@ -657,7 +732,7 @@ pdflatex informe.tex
 \begin{enumerate}
   \item Los \TestCount{} contrastes fueron coherentes con los generadores
         declarados, incluida la fuente uniforme que ambos métodos comparten, y
-        ninguno se solapa con otro.
+        no se duplicó un mismo estadístico como si fuera evidencia adicional.
   \item El control negativo confirma que la batería distingue uniformidad de
         aleatoriedad: un contador aprueba los contrastes de forma y fracasa en
         los de dependencia.
@@ -667,6 +742,8 @@ pdflatex informe.tex
         base sin convertirla en superioridad universal.
   \item Poisson es principal por coherencia, parsimonia, costo e interpretación.
   \item Polar-lognormal es valioso cuando interesa controlar el CV.
+  \item En el benchmark reproducible, Box--Muller obtuvo el mayor puntaje al
+        generar la misma normal; Polar conserva valor didáctico y experimental.
   \item La corrección temporal impide daño después del horizonte.
   \item App, CSV, figuras, informe y presentación usan evidencia reproducible.
 \end{enumerate}

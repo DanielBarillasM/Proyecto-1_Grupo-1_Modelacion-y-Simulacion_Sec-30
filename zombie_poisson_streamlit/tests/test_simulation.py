@@ -42,6 +42,7 @@ from simulation import (
     generate_poisson_arrivals,
     generate_polar_arrivals,
     holm_adjusted_p_values,
+    normal_generator_decision_matrix,
     paired_comparison_statistics,
     sample_marsaglia_normals_vectorized,
     simulate,
@@ -321,7 +322,7 @@ class ConfidenceIntervalTests(unittest.TestCase):
 
 
 class MethodComparisonTests(unittest.TestCase):
-    """P2: comparación de métodos de generación para la misma distribución."""
+    """Compara métodos de generación para la misma distribución."""
 
     def test_vectorized_polar_matches_the_theoretical_acceptance_rate(self) -> None:
         # La vectorización por lotes no debe alterar la probabilidad de
@@ -365,9 +366,23 @@ class MethodComparisonTests(unittest.TestCase):
         self.assertEqual(matrix.iloc[0]["method"], "Método fuerte")
         self.assertGreater(matrix.iloc[0]["weighted_total"], matrix.iloc[1]["weighted_total"])
 
+    def test_normal_decision_matrix_uses_measured_evidence(self) -> None:
+        # La función de alto nivel debe transformar la evidencia real en una
+        # matriz completa sin ordenar los métodos por el tamaño del valor p.
+        tests, performance = compare_normal_generators(
+            sample_size=8_000, benchmark_repetitions=3
+        )
+        matrix = normal_generator_decision_matrix(tests, performance)
+        self.assertEqual(set(matrix["method"]), {"Marsaglia Polar", "Box-Muller"})
+        self.assertEqual(len(matrix), 2)
+        self.assertTrue(matrix["weighted_total"].between(1.0, 5.0).all())
+        self.assertTrue(
+            (matrix["Ajuste a la distribución objetivo (KS)"] == 5.0).all()
+        )
+
 
 class ScenarioCalibrationTests(unittest.TestCase):
-    """P2: el escenario base ya no debe saturar la comparación pareada."""
+    """Verifica que el escenario base no sature la comparación pareada."""
 
     def test_default_scenario_is_not_saturated_at_the_ceiling(self) -> None:
         # Antes de la recalibración, Polar sobrevivía 400/400 corridas y solo

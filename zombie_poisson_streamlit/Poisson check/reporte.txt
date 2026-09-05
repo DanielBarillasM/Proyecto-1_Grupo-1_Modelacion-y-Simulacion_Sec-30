@@ -45,4 +45,4 @@ prueba absoluta; solo indica que la muestra no contradice el modelo.
 Diferencia estructural (no depende de la semilla): Poisson tiene CV=1 fijo
 y carece de memoria; Polar-lognormal permite fijar el CV libremente, por lo
 que puede ser más regular (CV<1, menos rachas) o más disperso (CV>1) que
-Poisson mantiendo la misma tasa media de llegadas.
+Poisson manteniendo la misma tasa media de llegadas.

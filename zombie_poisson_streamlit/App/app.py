@@ -40,8 +40,10 @@ from simulation import (
     GeneratorValidationResult,
     SimulationConfig,
     compare_arrival_models,
+    compare_normal_generators,
     config_as_dict,
     estimate_survival_probability,
+    normal_generator_decision_matrix,
     paired_comparison_statistics,
     simulate,
     summarize_batch,
@@ -55,6 +57,7 @@ from visuals import (
     interarrival_figure,
     model_comparison_figure,
     monte_carlo_figure,
+    normal_method_comparison_figure,
     paired_effects_figure,
     survival_curve_figure,
     timeline_figure,
@@ -254,6 +257,27 @@ def run_validation(
         sample_size=sample_size,
         count_repetitions=count_repetitions,
     )
+
+
+@st.cache_data(show_spinner=False)
+def run_normal_method_comparison(
+    sample_size: int,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Compara dos transformaciones normales bajo un protocolo reproducible.
+
+    La comparación se separa de la validación de interarribos porque aquí
+    Marsaglia Polar y Box--Muller persiguen exactamente la misma distribución
+    ``N(0,1)``. Esto permite atribuir las diferencias observadas al algoritmo
+    de generación y no a modelos de llegada distintos.
+    """
+
+    tests, performance = compare_normal_generators(
+        sample_size=sample_size,
+        benchmark_repetitions=9,
+        seed=77_411,
+    )
+    decision = normal_generator_decision_matrix(tests, performance)
+    return tests, performance, decision
 
 
 @st.cache_data(show_spinner=False)
@@ -723,9 +747,12 @@ with validation_tab:
         que el KS de `Z`. Lo que ese KS no puede ver —si la parametrización cumple
         `E[Delta] = 1/lambda`— se contrasta aparte con la media.
 
-        Con una familia de este tamaño, leer solo el valor p nominal produciría
-        rechazos por azar con probabilidad cercana al 60 %. La decisión se toma
-        sobre la columna corregida por Holm. No rechazar no demuestra perfección;
+        Si los 18 contrastes fueran independientes y todas sus hipótesis nulas
+        fueran ciertas, leer solo el valor p nominal daría una probabilidad
+        ilustrativa cercana al 60 % de al menos un falso rechazo. Como varias
+        pruebas comparten muestras, esa cifra no es una probabilidad exacta del
+        experimento. La decisión se toma sobre la columna corregida por Holm,
+        procedimiento que no exige independencia. No rechazar no demuestra perfección;
         indica que la muestra no contradice el modelo bajo el contraste utilizado.
         """
     )
@@ -754,9 +781,15 @@ with validation_tab:
                 int(validation_sample_size),
                 int(validation_count_repetitions),
             )
+            normal_tests, normal_performance, normal_decision = (
+                run_normal_method_comparison(max(20_000, int(validation_sample_size)))
+            )
         st.session_state["validation_result"] = {
             "signature": validation_signature,
             "validation": validation,
+            "normal_tests": normal_tests,
+            "normal_performance": normal_performance,
+            "normal_decision": normal_decision,
         }
 
     validation_saved = st.session_state.get("validation_result")
@@ -892,6 +925,69 @@ with validation_tab:
             )
             st.caption(
                 "El benchmark depende del equipo y se usa como criterio de costo, no como prueba de ajuste."
+            )
+
+        st.markdown("### Comparación directa: Marsaglia Polar frente a Box--Muller")
+        st.markdown(
+            """
+            Esta segunda comparación mantiene fija la distribución objetivo
+            `N(0,1)`. Por tanto, sí contrasta dos algoritmos equivalentes:
+            calidad estadística, costo vectorizado, fracción de propuestas
+            aprovechadas, robustez numérica y facilidad de auditoría. Un valor
+            p mayor no significa que un generador sea mejor; solo se comprueba
+            si cada muestra contradice o no el modelo normal al nivel elegido.
+            """
+        )
+        if "normal_tests" not in validation_saved:
+            st.info(
+                "Este resultado fue creado con una versión anterior de la app. "
+                "Ejecuta nuevamente la validación para comparar ambos métodos."
+            )
+        else:
+            normal_tests = validation_saved["normal_tests"]
+            normal_performance = validation_saved["normal_performance"]
+            normal_decision = validation_saved["normal_decision"]
+            st.plotly_chart(
+                normal_method_comparison_figure(normal_tests, normal_performance),
+                use_container_width=True,
+                config=PLOTLY_CONFIG,
+            )
+            method_left, method_right = st.columns(2)
+            with method_left:
+                method_tests_display = normal_tests.rename(columns={
+                    "method": "Método",
+                    "ks_statistic": "KS D",
+                    "p_value": "Valor p",
+                    "passes": "No se rechaza",
+                    "mean": "Media",
+                    "variance": "Varianza",
+                    "skewness": "Asimetría",
+                    "excess_kurtosis": "Curtosis exc.",
+                    "rejected_fraction": "Fracción rechazada",
+                })
+                st.dataframe(
+                    method_tests_display.style.format(precision=5),
+                    width="stretch",
+                    hide_index=True,
+                )
+            with method_right:
+                decision_display = normal_decision.rename(columns={
+                    "method": "Método",
+                    "weighted_total": "Puntaje ponderado",
+                })
+                st.dataframe(
+                    decision_display.style.format(precision=3),
+                    width="stretch",
+                    hide_index=True,
+                )
+            winner = str(normal_decision.iloc[0]["method"])
+            st.markdown(
+                f'<div class="callout blue"><b>Decisión del escenario de referencia</b><br>'
+                f'La matriz reproducible favorece a <b>{winner}</b>. Ambos métodos '
+                f'siguen siendo estadísticamente válidos si KS no los rechaza; '
+                f'Polar se conserva en el modelo alternativo porque ilustra de forma '
+                f'explícita el método de aceptación--rechazo solicitado en el curso.</div>',
+                unsafe_allow_html=True,
             )
 
 

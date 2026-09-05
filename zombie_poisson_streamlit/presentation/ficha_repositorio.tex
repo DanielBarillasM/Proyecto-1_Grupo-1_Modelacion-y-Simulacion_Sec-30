@@ -1,0 +1,171 @@
+\documentclass[11pt,letterpaper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[provide=*,spanish]{babel}
+\usepackage[letterpaper,margin=1.8cm]{geometry}
+\usepackage{xcolor,graphicx,booktabs,tabularx,array,float}
+\usepackage[hidelinks]{hyperref}
+\definecolor{ink}{HTML}{101713}
+\definecolor{green}{HTML}{4F7A32}
+\definecolor{pale}{HTML}{EAF2E5}
+\graphicspath{{../assets/}}
+\input{../report/generated_results.tex}
+\hypersetup{
+  pdftitle={Ficha tecnica - Outbreak Stochastic Survival Lab},
+  pdfauthor={Grupo 1 - Seccion 30},
+  colorlinks=true,linkcolor=green,urlcolor=green
+}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.55em}
+\newcommand{\band}[1]{%
+  \vspace{0.25em}\colorbox{ink}{\parbox{\dimexpr\textwidth-2\fboxsep}{%
+  \color{white}\large\bfseries #1}}\vspace{0.35em}}
+\begin{document}
+\hypersetup{pageanchor=false}
+\begin{titlepage}
+\pagecolor{ink}\color{white}\centering
+\vspace*{0.7cm}
+{\Huge\bfseries OUTBREAK\par}
+{\Large\color{green!35!white}Stochastic Survival Lab\par}
+\vspace{0.8cm}
+\includegraphics[width=0.88\textwidth]{outbreak-command-center.png}
+\vfill
+{\Large\bfseries Ficha técnica del repositorio\par}
+\vspace{0.4cm}
+Proyecto 1 de Modelación y Simulación --- Sección 30\par
+Grupo 1 --- 2026\par
+\vspace{0.45cm}
+\href{https://github.com/DanielBarillasM/Proyecto-1_Grupo-1_Modelacion-y-Simulacion_Sec-30}%
+{\color{green!35!white}\texttt{github.com/DanielBarillasM/Proyecto-1\_Grupo-1\_...}}
+\end{titlepage}
+\hypersetup{pageanchor=true}
+\nopagecolor\color{ink}
+
+\band{Propósito y alcance}
+
+Se modela el subsistema real de aparición y balance de enemigos de un
+videojuego. Los tiempos aleatorios alimentan movimiento y combate para estimar
+la probabilidad de sobrevivir una misión de 90 segundos.
+
+\textbf{Pregunta:} ¿cómo cambian congestión y supervivencia cuando se conserva
+la media de los interarribos, pero cambia su distribución?
+
+\begin{itemize}
+  \item Poisson homogéneo con interarribos exponenciales por inversa.
+  \item Renovación Polar--lognormal, positiva y con CV configurable.
+  \item Marsaglia Polar frente a Box--Muller para la misma $N(0,1)$.
+  \item Monte Carlo pareado, Wilson, McNemar, Wilcoxon y bootstrap.
+\end{itemize}
+
+\band{Modelo y escenario base}
+
+\begin{tabularx}{\textwidth}{>{\bfseries}p{3.5cm}X X}
+\toprule
+Componente & Modelo & Propósito \\
+\midrule
+Llegada principal & $\Delta=-\ln(U)/\lambda$ & Poisson de tasa constante \\
+Llegada alternativa & $\Delta=e^{\mu+\sigma Z}$ & Igual media, CV distinto \\
+Combate & Paso $dt=0.05$ s & Movimiento, alcance, contacto y daño \\
+Visualización & Plotly \texttt{Mesh3d} & Escena navegable en Streamlit \\
+\bottomrule
+\end{tabularx}
+
+\begin{center}
+\begin{tabular}{lrlrlr}
+\toprule
+Tasa & 55.8/min & CV Polar & 0.60 & Horizonte & 90 s \\
+HP jugador & 110 & DPS jugador & 42 & Alcance & 10 m \\
+HP infectado & 42 & Velocidad & 1.55 m/s & DPS & 9.5 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+La configuración evita la saturación cerca del 100\,\% y produce pares
+discordantes informativos. Es una calibración de demostración, no telemetría.
+
+\newpage
+\band{Validación y comparación algorítmica}
+
+La batería contiene \TestCount{} contrastes con corrección de Holm: PCG64,
+LCG propio, transformaciones, independencia, aceptación y conteo Poisson. Un
+contador uniforme pero predecible aprueba forma y falla las tres pruebas de
+dependencia, por lo que actúa como control negativo.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.96\textwidth]{report-normal-method-comparison.png}
+\end{figure}
+
+\begin{tabular}{lrrrr}
+\toprule
+Método & KS $p$ & $\mu$s/valor & Rechazo & Puntaje / 5 \\
+\midrule
+Marsaglia Polar & \PolarNormalKSP & \PolarNormalMicros & \PolarRejectedPercent\,\% & \PolarMethodScore \\
+Box--Muller & \BoxMullerKSP & \BoxMullerMicros & 0\,\% & \BoxMullerMethodScore \\
+\bottomrule
+\end{tabular}
+
+Ambos métodos son compatibles con $N(0,1)$. La matriz favorece a
+\NormalMethodWinner{} en el equipo de referencia. Polar se conserva porque
+materializa aceptación--rechazo; un valor $p$ mayor no se interpreta como mejor.
+
+\band{Resultados de 400 corridas por modelo}
+
+\begin{tabular}{lrr}
+\toprule
+Métrica & Poisson & Polar--lognormal \\
+\midrule
+Supervivencia & \PoissonSurvival\,\% & \PolarSurvival\,\% \\
+IC Wilson 95\,\% & [\PoissonCILow, \PoissonCIHigh]\,\% & [\PolarCILow, \PolarCIHigh]\,\% \\
+Tiempo medio & \PoissonMeanTime{} s & \PolarMeanTime{} s \\
+Pico activo medio & \PoissonPeak & \PolarPeak \\
+\bottomrule
+\end{tabular}
+
+Efecto Poisson menos Polar: \SurvivalDifference{} puntos porcentuales, IC
+[\SurvivalDiffLow, \SurvivalDiffHigh] y McNemar $p=\McNemarP$. Es evidencia
+para este escenario, no superioridad universal de una distribución.
+
+\newpage
+\band{Arquitectura y uso}
+
+\begin{tabularx}{\textwidth}{>{\ttfamily}p{4.2cm}X}
+\toprule
+Ruta & Responsabilidad \\
+\midrule
+App/simulation.py & Motor, generadores, validación e inferencia \\
+App/visuals.py & Gráficas Plotly y escena 3D \\
+App/app.py & Interfaz, controles, estado y caché \\
+report/ & Informe, CSV y figuras regenerables \\
+presentation/ & HTML, ficha y guion dividido \\
+tests/ & 28 pruebas automatizadas \\
+\bottomrule
+\end{tabularx}
+
+\textbf{Inicio rápido}
+\begin{verbatim}
+cd zombie_poisson_streamlit
+python -m venv .venv
+python -m pip install -r requirements/requirements.txt
+python -m streamlit run App/app.py
+\end{verbatim}
+
+\textbf{Entregables:} aplicación Streamlit, README, informe LaTeX/PDF, CSV,
+presentación HTML offline, ficha DOCX/PDF y guion LaTeX/PDF dividido entre
+Pablo Daniel Barillas Moreno, Jorge Palacios, Andrés Rafael Chivalán y Javier
+Andrés Chen.
+
+\band{Límites y lectura responsable}
+
+La tasa es constante; el jugador no se desplaza; los obstáculos son visuales;
+el combate usa paso finito; no existe calibración con telemetría real. Los
+valores $p$ no miden importancia práctica y los benchmarks dependen del equipo.
+
+\textbf{Conclusión:} Poisson permanece como modelo principal por parsimonia,
+interpretación y correspondencia exacta entre conteo e interarribos. La
+alternativa demuestra que igual media no implica iguales rachas, concurrencia
+o supervivencia; la comparación Box--Muller separa esa conclusión de la
+eficiencia del algoritmo que produce normales.
+
+\end{document}

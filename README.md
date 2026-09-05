@@ -13,7 +13,7 @@
   <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white">
   <img alt="Streamlit" src="https://img.shields.io/badge/Streamlit-1.50%2B-FF4B4B?logo=streamlit&logoColor=white">
   <img alt="Plotly 3D" src="https://img.shields.io/badge/Plotly-3D-3F4F75?logo=plotly&logoColor=white">
-  <img alt="Pruebas" src="https://img.shields.io/badge/tests-12-success">
+  <img alt="Pruebas" src="https://img.shields.io/badge/tests-28-success">
   <img alt="SciPy" src="https://img.shields.io/badge/SciPy-validación-8CAAE6?logo=scipy&logoColor=white">
   <img alt="Licencia MIT" src="https://img.shields.io/badge/license-MIT-8A2BE2">
 </p>
@@ -33,6 +33,7 @@
 | [Ejecución](#inicio-rápido) | Instalación y comandos correctos para la nueva estructura |
 | [Entregables](#entregables-académicos) | Presentación HTML e informe LaTeX |
 | [Pruebas](#pruebas-automatizadas) | Validación determinista y estadística |
+| [Auditoría](TODO.md) | Matriz de cumplimiento, correcciones y mejoras opcionales |
 
 ## Descripción general
 
@@ -42,12 +43,13 @@ de supervivencia. La narrativa utiliza infectados, mientras el modelo genera
 instantes de aparición, simula movimiento y combate, y estima la probabilidad
 de completar un horizonte temporal.
 
-La investigación se apoya en cuatro pilares:
+La investigación se apoya en seis ejes:
 
 | Pilar | Implementación |
 |---|---|
 | Modelación probabilística | Proceso de Poisson e interarribos exponenciales |
 | Modelo de contraste | Proceso de renovación lognormal generado con Marsaglia polar |
+| Comparación algorítmica | Marsaglia Polar frente a Box--Muller para la misma $N(0,1)$ |
 | Simulación computacional | Motor discreto con paso temporal configurable |
 | Validación | Fuente uniforme, LCG propio, KS, independencia, dispersión, aceptación, Holm y benchmark |
 | Inferencia y comunicación | Wilson, McNemar, Wilcoxon, bootstrap, gráficas y escena 3D |
@@ -181,14 +183,14 @@ modelos.
 | Parámetro | Unidad | Valor | Interpretación |
 |---|---:|---:|---|
 | Duración | s | 90 | Horizonte de la misión |
-| Tasa | llegadas/min | 39 | Equivale a $\lambda=0.65$ por segundo |
-| CV Polar | adimensional | 0.45 | Variabilidad lognormal |
+| Tasa | llegadas/min | 55.8 | Equivale a $\lambda=0.93$ por segundo |
+| CV Polar | adimensional | 0.60 | Variabilidad lognormal |
 | HP del protagonista | HP | 110 | Vida inicial disponible |
 | DPS del protagonista | HP/s | 42 | Capacidad ofensiva |
 | Alcance | m | 10 | Radio efectivo del ataque |
 | HP infectado | HP | 42 | Resistencia base |
 | Velocidad infectado | m/s | 1.55 | Avance radial base |
-| DPS infectado | HP/s | 9 | Daño base al contactar |
+| DPS infectado | HP/s | 9.5 | Daño base al contactar |
 | Paso temporal | s | 0.05 | Resolución numérica |
 
 La interfaz muestra las unidades y evita configuraciones geométricas inválidas.
@@ -233,15 +235,18 @@ estadístico y el mismo valor $p$ que el KS de $Z$, así que no sería un sépti
 control sino el mismo número escrito dos veces. Lo que ese KS no puede ver —si la
 parametrización cumple $E[\Delta]=1/\lambda$— se contrasta con la media.
 
-**Corrección por multiplicidad.** Con 18 contrastes simultáneos al 5 %, la
-probabilidad de que al menos uno se rechace por azar ronda el 60 %. La decisión
-se toma sobre el valor $p$ ajustado por Holm-Bonferroni.
+**Corrección por multiplicidad.** Si los 18 contrastes fueran independientes y
+todas las hipótesis nulas fueran ciertas, $1-(1-0.05)^{18}\approx60.3\%$ sería
+la probabilidad ilustrativa de al menos un falso rechazo. Varias pruebas
+comparten muestras, de modo que no es la probabilidad exacta de este
+experimento. La decisión se toma sobre el valor $p$ ajustado por
+Holm--Bonferroni, que no exige independencia.
 
 En la semilla de referencia ninguno fue rechazado, ni antes ni después de la
 corrección: el menor valor $p$ nominal de toda la familia fue $0.1716$. Algunos
 valores representativos: $p_{\mathrm{KS\ exp}}=0.1863$,
 $p_{\mathrm{KS\ normal}}=0.9236$, $p_{\mathrm{KS\ unif.}}=0.3006$,
-$p_{\mathrm{media\ lognormal}}=0.7826$ y $p_{\mathrm{disp.}}=0.5439$. No rechazar
+$p_{\mathrm{media\ lognormal}}=0.7158$ y $p_{\mathrm{disp.}}=0.3464$. No rechazar
 una hipótesis significa que la muestra no contradice el modelo; no es una
 garantía absoluta.
 
@@ -270,6 +275,29 @@ la tabla principal, porque se espera que falle.
   <img src="zombie_poisson_streamlit/assets/report-generator-validation.png" alt="Validación formal de los generadores" width="900">
 </p>
 
+### Comparación de dos métodos para la misma distribución
+
+La comparación Poisson--Polar estudia modelos de llegada diferentes. Para
+comparar algoritmos sin cambiar la distribución objetivo, el proyecto genera
+$N(0,1)$ tanto con **Marsaglia Polar** como con **Box--Muller**. Ambos superaron
+KS en la muestra reproducible de 20 000 valores. La matriz multicriterio usa
+ajuste como umbral, costo medido, fracción aprovechada, robustez numérica y
+facilidad de auditoría; no ordena métodos por el tamaño del valor $p$.
+
+| Método | KS $p$ | Costo mediano | Propuestas rechazadas | Puntaje ponderado |
+|---|---:|---:|---:|---:|
+| Marsaglia Polar | 0.1337 | 0.105 µs/valor | 21.8 % | 3.908/5 |
+| Box--Muller | 0.3288 | 0.051 µs/valor | 0 % | 4.800/5 |
+
+En el equipo de referencia la decisión favoreció a Box--Muller por costo y
+previsibilidad. Marsaglia Polar se conserva en el modelo alternativo porque
+implementa explícitamente aceptación--rechazo y permite exponer ese método del
+curso. Los tiempos son descriptivos y deben regenerarse en cada equipo.
+
+<p align="center">
+  <img src="zombie_poisson_streamlit/assets/report-normal-method-comparison.png" alt="Comparación de Marsaglia Polar y Box-Muller" width="900">
+</p>
+
 ## Experimentos estadísticos
 
 ### Estimación Monte Carlo
@@ -296,9 +324,11 @@ La inferencia se realiza sobre los pares:
 - Wilcoxon pareada para métricas continuas.
 - Bootstrap de pares para intervalos del efecto Poisson menos Polar.
 
-Con 400 partidas por modelo, la diferencia de supervivencia fue $-3.5$ puntos
-porcentuales, IC bootstrap $[-5.5,-1.8]$ y $p=0.000122$. Poisson produjo un
-pico medio de concurrencia 3.0 enemigos mayor. El criterio de elección también
+Con 400 partidas por modelo, la supervivencia fue 35.2 % con Poisson y 77.8 %
+con Polar--lognormal. La diferencia Poisson menos Polar fue $-42.5$ puntos
+porcentuales, IC bootstrap $[-48.8,-35.8]$ y McNemar exacta
+$p=1.697\times10^{-28}$. Poisson produjo un pico medio de concurrencia 2.995
+enemigos mayor. El criterio de elección también
 considera ajuste, costo e interpretabilidad; no solamente supervivencia.
 
 <p align="center">
@@ -351,6 +381,7 @@ flowchart LR
 ```text
 Proyecto-1_Grupo-1_Modelacion-y-Simulacion_Sec-30/
 |-- README.md
+|-- TODO.md
 |-- LICENSE
 `-- zombie_poisson_streamlit/
     |-- .streamlit/
@@ -365,9 +396,17 @@ Proyecto-1_Grupo-1_Modelacion-y-Simulacion_Sec-30/
     |   `-- report-*.png
     |-- presentation/
     |   |-- vendor/mathjax/
+    |   |-- generate_ficha.py
     |   |-- ficha_repositorio.docx
+    |   |-- ficha_repositorio.tex
     |   |-- ficha_repositorio.pdf
+    |   |-- guion_exposicion.tex
+    |   |-- guion_exposicion.pdf
     |   `-- presentacion.html
+    |-- Poisson check/
+    |   |-- comparacion_poisson_polar.py
+    |   |-- reporte.txt
+    |   `-- 01_*.png / 02_*.png
     |-- report/
     |   |-- data/
     |   |-- generate_report_assets.py
@@ -375,6 +414,7 @@ Proyecto-1_Grupo-1_Modelacion-y-Simulacion_Sec-30/
     |   |-- informe.tex
     |   `-- informe.pdf
     |-- requirements/
+    |   |-- documentation.txt
     |   `-- requirements.txt
     |-- tests/
     |   `-- test_simulation.py
@@ -390,6 +430,9 @@ Proyecto-1_Grupo-1_Modelacion-y-Simulacion_Sec-30/
 | [`report/generate_report_assets.py`](zombie_poisson_streamlit/report/generate_report_assets.py) | Regenera CSV, figuras y macros LaTeX |
 | [`report/informe.tex`](zombie_poisson_streamlit/report/informe.tex) | Informe académico reproducible |
 | [`presentation/presentacion.html`](zombie_poisson_streamlit/presentation/presentacion.html) | Exposición navegable en el navegador |
+| [`presentation/guion_exposicion.tex`](zombie_poisson_streamlit/presentation/guion_exposicion.tex) | Guion oral dividido entre los cuatro integrantes |
+| [`presentation/generate_ficha.py`](zombie_poisson_streamlit/presentation/generate_ficha.py) | Regenera la ficha DOCX con resultados vigentes |
+| [`Poisson check/comparacion_poisson_polar.py`](zombie_poisson_streamlit/Poisson%20check/comparacion_poisson_polar.py) | Auditoría suplementaria y autocontenida de teoría frente a práctica |
 
 Las imágenes de `assets/` se generaron específicamente para este proyecto con
 una herramienta de generación de imágenes de OpenAI. No contienen marcas ni
@@ -426,6 +469,11 @@ python -m streamlit run App/app.py
 La aplicación se abre normalmente en <http://localhost:8501>. Después de la
 primera instalación basta con activar el entorno y ejecutar el último comando.
 
+La auditoría suplementaria se reproduce, sin depender del directorio actual,
+con `python ".\Poisson check\comparacion_poisson_polar.py"` desde
+`zombie_poisson_streamlit`; actualiza sus dos figuras y `reporte.txt` en esa
+misma carpeta.
+
 ### Flujo recomendado de uso
 
 1. Elegir el modelo de llegadas y configurar la tasa por minuto.
@@ -451,12 +499,13 @@ En sistemas tipo Unix el comando equivalente es:
 python -m unittest discover -s tests -v
 ```
 
-Las 21 pruebas cubren reproducibilidad, momentos, los 18 contrastes formales
+Las 28 pruebas cubren reproducibilidad, momentos, los 18 contrastes formales
 bajo corrección de Holm, ausencia de estadísticos duplicados entre contrastes,
 la batería de la fuente uniforme y su control negativo, el LCG propio, la
 potencia de la ji-cuadrada del conteo, consistencia posterior a una derrota,
 validación geométrica, emparejamiento, bootstrap, estabilidad respecto de
-$\Delta t$ y ausencia de daño después de $T$.
+$\Delta t$, ausencia de daño después de $T$, comparación Polar--Box--Muller y
+calibración no saturada del escenario base.
 
 ## Entregables académicos
 
@@ -479,7 +528,19 @@ o los controles en pantalla para navegar.
 La ficha editable [`ficha_repositorio.docx`](zombie_poisson_streamlit/presentation/ficha_repositorio.docx)
 presenta el propósito, modelos, arquitectura, instalación, resultados,
 entregables e integrantes. Incluye enlaces activos tanto a la página web como
-a la URL de clonación del repositorio..
+a la URL de clonación del repositorio. Se regenera con:
+
+```powershell
+python -m pip install -r .\requirements\documentation.txt
+python .\presentation\generate_ficha.py
+```
+
+### Guion de exposición
+
+El guion dividido por integrante está disponible como
+[`guion_exposicion.tex`](zombie_poisson_streamlit/presentation/guion_exposicion.tex)
+y [`guion_exposicion.pdf`](zombie_poisson_streamlit/presentation/guion_exposicion.pdf).
+Desde `presentation/` se compila dos veces con `pdflatex guion_exposicion.tex`.
 
 ### Informe LaTeX
 

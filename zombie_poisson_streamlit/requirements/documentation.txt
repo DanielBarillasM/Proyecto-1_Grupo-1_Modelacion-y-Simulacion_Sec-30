@@ -1,0 +1,3 @@
+# Dependencia opcional para regenerar la ficha editable del repositorio.
+# La compilación de los PDF requiere además una distribución LaTeX con pdflatex.
+python-docx==1.2.0

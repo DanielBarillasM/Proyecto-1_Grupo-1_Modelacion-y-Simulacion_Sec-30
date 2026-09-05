@@ -47,12 +47,12 @@ class SimulationConfig:
     """
 
     duration: float = 90.0  # Horizonte de simulación, en segundos.
-    # lambda_rate, polar_cv y enemy_dps quedaron recalibrados en P2: el
+    # lambda_rate, polar_cv y enemy_dps quedaron recalibrados en la auditoría: el
     # escenario original (0.65, 0.45, 9.0) saturaba Polar en 400/400
     # supervivencias, con solo 14 pares discordantes sosteniendo McNemar. Con
     # estos valores, Poisson sobrevive ~35 % y Polar ~78 % sobre 400 corridas
-    # pareadas (254 pares discordantes en ambas direcciones), lejos de los
-    # extremos 0 y 1 y con potencia estadística real. Ver
+    # pareadas (254 pares discordantes, presentes en ambas direcciones), lejos
+    # de los extremos 0 y 1 y con potencia estadística real. Ver
     # ``compare_arrival_models`` / ``paired_comparison_statistics``.
     lambda_rate: float = 0.93  # Intensidad media de llegadas por segundo.
     arrival_model: ArrivalModel = "poisson"  # Familia temporal seleccionada.
@@ -670,11 +670,13 @@ def uniform_source_tests(
 def holm_adjusted_p_values(p_values: np.ndarray) -> np.ndarray:
     """Corrige por multiplicidad con el método de Holm-Bonferroni.
 
-    Con dieciocho contrastes simultáneos a ``alpha = 0.05``, la probabilidad de
-    que al menos uno se rechace por azar ronda el 60 %. Holm controla la tasa de
-    error por familia sin suponer independencia entre las pruebas y es uniformemente
-    más potente que Bonferroni. El valor devuelto se compara contra el mismo
-    ``alpha`` nominal.
+    Con dieciocho contrastes independientes a ``alpha = 0.05``, la probabilidad
+    de al menos un falso rechazo sería ``1 - 0.95**18``, cerca del 60 %. Aquí
+    varios contrastes comparten muestras y no son independientes, por lo que ese
+    porcentaje es solo una ilustración del problema de multiplicidad, no la FWER
+    exacta de esta batería. Holm controla la tasa de error por familia sin exigir
+    independencia y es uniformemente más potente que Bonferroni. El valor
+    devuelto se compara contra el mismo ``alpha`` nominal.
     """
 
     total = len(p_values)
@@ -1555,9 +1557,10 @@ def build_decision_matrix(
 
     Args:
         generator_scores: ``{nombre_del_metodo: {criterio: puntaje_1_a_5}}``.
-            Los puntajes deben fijarse a partir de evidencia numérica generada
-            por este mismo módulo (KS, benchmark, tasa de aceptación, pares
-            discordantes), no por apreciación cualitativa.
+            Los criterios cuantificables deben proceder de evidencia generada
+            por el módulo (KS, benchmark y aceptación). Cuando un criterio sea
+            necesariamente cualitativo, como facilidad de auditoría, su escala
+            y justificación deben quedar declaradas junto a la matriz.
         criteria: pares ``(criterio, peso)``; los pesos deben sumar 1.0.
 
     Returns:
@@ -1585,6 +1588,72 @@ def build_decision_matrix(
         row["weighted_total"] = weighted_total
         rows.append(row)
     return pd.DataFrame(rows).sort_values("weighted_total", ascending=False).reset_index(drop=True)
+
+
+def normal_generator_decision_matrix(
+    tests: pd.DataFrame,
+    performance: pd.DataFrame,
+) -> pd.DataFrame:
+    """Construye la matriz de decisión Marsaglia Polar frente a Box-Muller.
+
+    Los valores p se usan únicamente para decidir si cada método es compatible
+    con ``N(0,1)``; un valor p mayor no se interpreta como mejor ajuste. El costo
+    se puntúa de forma relativa respecto del método más rápido y la eficiencia
+    usa la fracción de propuestas aprovechadas. Robustez y sencillez son
+    calificaciones cualitativas explícitas: Polar evita funciones trigonométricas
+    pero necesita rechazo y control de lotes; Box-Muller es directo, aunque debe
+    proteger ``log(U_1)`` cuando ``U_1`` se aproxima a cero.
+
+    La matriz es una ayuda multicriterio reproducible, no una prueba inferencial.
+    Ambos métodos siguen siendo válidos si sus contrastes no se rechazan.
+    """
+
+    required_tests = {"method", "passes", "rejected_fraction"}
+    required_performance = {"method", "microseconds_per_value"}
+    if missing := required_tests.difference(tests.columns):
+        raise ValueError(f"Faltan columnas de calidad: {sorted(missing)}")
+    if missing := required_performance.difference(performance.columns):
+        raise ValueError(f"Faltan columnas de rendimiento: {sorted(missing)}")
+
+    evidence = tests.merge(
+        performance[["method", "microseconds_per_value"]],
+        on="method",
+        how="inner",
+        validate="one_to_one",
+    )
+    expected_methods = {"Marsaglia Polar", "Box-Muller"}
+    if set(evidence["method"]) != expected_methods:
+        raise ValueError("La decisión requiere evidencia de Polar y Box-Muller")
+    if (evidence["microseconds_per_value"] <= 0).any():
+        raise ValueError("Los tiempos del benchmark deben ser positivos")
+
+    fastest = float(evidence["microseconds_per_value"].min())
+    qualitative = {
+        "Marsaglia Polar": {
+            "Robustez numérica (funciones trascendentales, casos de borde)": 4.5,
+            "Sencillez de implementación y auditoría": 3.5,
+        },
+        "Box-Muller": {
+            "Robustez numérica (funciones trascendentales, casos de borde)": 4.0,
+            "Sencillez de implementación y auditoría": 4.5,
+        },
+    }
+    scores: dict[str, dict[str, float]] = {}
+    for row in evidence.itertuples(index=False):
+        method = str(row.method)
+        cost = float(row.microseconds_per_value)
+        accepted_fraction = 1.0 - float(row.rejected_fraction)
+        scores[method] = {
+            "Ajuste a la distribución objetivo (KS)": 5.0 if bool(row.passes) else 1.0,
+            "Costo computacional (µs/valor, misma vectorización)": max(
+                1.0, 5.0 * fastest / cost
+            ),
+            "Eficiencia y previsibilidad del costo (fracción no rechazada)": max(
+                1.0, 5.0 * accepted_fraction
+            ),
+            **qualitative[method],
+        }
+    return build_decision_matrix(scores)
 
 
 def survival_curve(
