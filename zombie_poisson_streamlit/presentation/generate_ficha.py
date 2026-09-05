@@ -293,13 +293,14 @@ def main() -> None:
         "Aplicación Streamlit con botón SIMULAR MISIÓN y seis laboratorios.",
         "README con teoría, instalación, resultados y limitaciones.",
         "Informe LaTeX/PDF y CSV regenerables.",
-        "Presentación HTML offline y guion LaTeX/PDF dividido entre cuatro integrantes.",
+        "Presentación HTML offline y guion LaTeX/PDF dividido entre cinco integrantes.",
         "Ficha DOCX editable y ficha PDF con fuentes versionadas.",
     ])
     document.add_heading("Integrantes", level=2)
     document.add_paragraph(
         "Pablo Daniel Barillas Moreno · Jorge Palacios · "
-        "Andrés Rafael Chivalán · Javier Andrés Chen"
+        "Adrián Ricardo González Muralles · Andrés Rafael Chivalán · "
+        "Javier Andrés Chen"
     )
     repository = document.add_paragraph()
     repository.add_run("Repositorio: ").bold = True

@@ -33,7 +33,7 @@
 | [Ejecución](#inicio-rápido) | Instalación y comandos correctos para la nueva estructura |
 | [Entregables](#entregables-académicos) | Presentación HTML e informe LaTeX |
 | [Pruebas](#pruebas-automatizadas) | Validación determinista y estadística |
-| [Auditoría](TODO.md) | Matriz de cumplimiento, correcciones y mejoras opcionales |
+| [Integrantes](#integrantes) | Equipo responsable del proyecto |
 
 ## Descripción general
 
@@ -381,7 +381,6 @@ flowchart LR
 ```text
 Proyecto-1_Grupo-1_Modelacion-y-Simulacion_Sec-30/
 |-- README.md
-|-- TODO.md
 |-- LICENSE
 `-- zombie_poisson_streamlit/
     |-- .streamlit/
@@ -430,7 +429,7 @@ Proyecto-1_Grupo-1_Modelacion-y-Simulacion_Sec-30/
 | [`report/generate_report_assets.py`](zombie_poisson_streamlit/report/generate_report_assets.py) | Regenera CSV, figuras y macros LaTeX |
 | [`report/informe.tex`](zombie_poisson_streamlit/report/informe.tex) | Informe académico reproducible |
 | [`presentation/presentacion.html`](zombie_poisson_streamlit/presentation/presentacion.html) | Exposición navegable en el navegador |
-| [`presentation/guion_exposicion.tex`](zombie_poisson_streamlit/presentation/guion_exposicion.tex) | Guion oral dividido entre los cuatro integrantes |
+| [`presentation/guion_exposicion.tex`](zombie_poisson_streamlit/presentation/guion_exposicion.tex) | Guion oral dividido entre los cinco integrantes |
 | [`presentation/generate_ficha.py`](zombie_poisson_streamlit/presentation/generate_ficha.py) | Regenera la ficha DOCX con resultados vigentes |
 | [`Poisson check/comparacion_poisson_polar.py`](zombie_poisson_streamlit/Poisson%20check/comparacion_poisson_polar.py) | Auditoría suplementaria y autocontenida de teoría frente a práctica |
 
@@ -588,6 +587,14 @@ directa entre conteos e interarribos. Polar-lognormal demuestra que mantener la
 misma media no conserva rachas, concurrencia ni supervivencia. En el escenario
 base la diferencia pareada es estadísticamente detectable, pero sigue siendo
 una conclusión condicionada por los parámetros y supuestos del sistema.
+
+## Integrantes
+
+- Pablo Daniel Barillas Moreno
+- Jorge Palacios
+- Adrián Ricardo González Muralles
+- Andrés Rafael Chivalán
+- Javier Andrés Chen
 
 ## Licencia
 
