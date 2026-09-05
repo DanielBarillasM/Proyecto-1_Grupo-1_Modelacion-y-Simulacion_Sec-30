@@ -76,10 +76,13 @@ st.set_page_config(
 # Los selectores se concentran aquí para que la lógica Python permanezca limpia.
 CUSTOM_CSS = """
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap');
 :root {
     --bg:#070908; --panel:#0d1210; --panel2:#121915; --line:#29362f;
     --text:#e8eee9; --muted:#92a29a; --lime:#c7ff73; --green:#9fe870;
     --red:#ff5964; --amber:#f7a64a; --blue:#68b8d8;
+    --font-display:'Rajdhani', sans-serif;
+    --font-mono:'Share Tech Mono', monospace;
 }
 .stApp {
     background:
@@ -94,32 +97,112 @@ CUSTOM_CSS = """
 }
 [data-testid="stSidebar"] .block-container {padding-top:1.2rem}
 .block-container {padding-top:1.3rem;padding-bottom:4rem;max-width:1540px}
-.eyebrow {color:var(--lime);font-size:.72rem;letter-spacing:.19em;text-transform:uppercase;font-weight:800}
+.eyebrow {color:var(--lime);font-size:.72rem;letter-spacing:.19em;text-transform:uppercase;font-weight:800;font-family:var(--font-display)}
 .hero-copy {padding:18px 0 8px}
-.hero-copy h1 {font-size:clamp(2.5rem,5vw,5.4rem);line-height:.88;letter-spacing:-.06em;margin:.45rem 0 1rem}
+.hero-copy h1 {font-family:var(--font-display);font-weight:700;font-size:clamp(2.5rem,5vw,5.4rem);line-height:.88;letter-spacing:-.02em;margin:.45rem 0 1rem}
 .hero-copy p {color:var(--muted);font-size:1.02rem;line-height:1.7;max-width:760px}
 .hero-copy .rule {width:72px;height:4px;background:var(--lime);border-radius:10px;margin:1.3rem 0}
 .stImage img {border-radius:22px;border:1px solid #334139;box-shadow:0 22px 70px rgba(0,0,0,.36)}
 .section-title {margin:1.2rem 0 .7rem;padding-bottom:.55rem;border-bottom:1px solid var(--line)}
-.section-title small {display:block;color:var(--lime);letter-spacing:.16em;text-transform:uppercase;font-weight:800;font-size:.68rem}
-.section-title strong {font-size:1.28rem;letter-spacing:-.02em}
+.section-title small {display:block;color:var(--lime);letter-spacing:.16em;text-transform:uppercase;font-weight:800;font-size:.68rem;font-family:var(--font-display)}
+.section-title strong {font-size:1.3rem;letter-spacing:0;font-family:var(--font-display);font-weight:700}
 .status-strip {border:1px solid var(--line);border-left:4px solid var(--lime);border-radius:14px;padding:13px 16px;background:#0e1511;margin:.4rem 0 1rem}
 .status-strip.failed {border-left-color:var(--red)}
 .callout {border:1px solid var(--line);border-radius:14px;padding:15px 17px;background:#0d1410;color:#c8d3cc;margin:.7rem 0 1rem}
 .callout.blue {border-left:3px solid var(--blue)}
 .callout.amber {border-left:3px solid var(--amber)}
-.model-card {height:100%;border:1px solid var(--line);border-radius:18px;padding:18px;background:linear-gradient(180deg,#111813,#0c110e)}
-.model-card h3 {margin:.2rem 0 .6rem}.model-card p {color:var(--muted);line-height:1.55}
-.tag {display:inline-block;border:1px solid #3a4b40;border-radius:999px;padding:.24rem .55rem;margin:.3rem .25rem .2rem 0;color:#bac8c0;font-size:.72rem}
+.model-card {height:100%;border:1px solid var(--line);border-radius:18px;padding:18px;background:linear-gradient(180deg,#111813,#0c110e);transition:transform .15s ease, box-shadow .15s ease}
+.model-card:hover {transform:translateY(-3px);box-shadow:0 16px 38px rgba(0,0,0,.4)}
+.model-card h3 {margin:.2rem 0 .6rem;font-family:var(--font-display);font-weight:700}.model-card p {color:var(--muted);line-height:1.55}
+/* Streamlit agrega un icono de enlace ancla a cualquier h1-h6, incluso dentro
+   de HTML propio (como el título del hero). Se oculta en toda la app: es
+   ruido visual aquí, no navegación real. */
+h1 a, h2 a, h3 a, h4 a, h5 a, h6 a {display:none !important}
+.tag {display:inline-block;border:1px solid #3a4b40;border-radius:999px;padding:.24rem .55rem;margin:.3rem .25rem .2rem 0;color:#bac8c0;font-size:.74rem;font-family:var(--font-display);letter-spacing:.02em}
 [data-testid="stMetric"] {background:linear-gradient(180deg,#111813,#0c120e);border:1px solid var(--line);padding:13px 15px;border-radius:15px}
-[data-testid="stMetricLabel"] {color:#9caca3}[data-testid="stMetricValue"] {color:#f0f5f1;letter-spacing:-.04em}
+[data-testid="stMetricLabel"] {color:#9caca3}[data-testid="stMetricValue"] {color:#f0f5f1;letter-spacing:-.01em;font-family:var(--font-mono)}
 .stButton>button,.stFormSubmitButton>button {border-radius:12px;border:1px solid #587345;background:linear-gradient(180deg,#21301e,#151f16);color:#e9f7df;font-weight:800;min-height:46px;letter-spacing:.025em}
 .stButton>button:hover,.stFormSubmitButton>button:hover {border-color:var(--lime);color:white}
+
+/* --- Centro de control: pulido puramente visual, mismo orden, misma paleta --- */
+/* "Modelo de llegadas" como selector segmentado en vez de radios sueltos. */
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] {
+    display:flex;gap:.35rem;background:var(--panel2);
+    border:1px solid var(--line);border-radius:12px;padding:.3rem;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] label {
+    flex:1;margin:0 !important;padding:.4rem .5rem !important;
+    border-radius:9px;transition:background .15s ease,box-shadow .15s ease;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) {
+    background:linear-gradient(180deg,#21301e,#151f16);
+    box-shadow:inset 0 0 0 1px #587345;
+}
+/* "Restablecer valores por defecto" queda como acción secundaria (ghost),
+   sin competir visualmente con "SIMULAR MISIÓN". Solo afecta a st.button,
+   no a st.form_submit_button, así que no toca el botón principal. */
+[data-testid="stSidebar"] [data-testid="stButton"] button {
+    background:transparent;border:1px solid var(--line);color:var(--muted);
+}
+[data-testid="stSidebar"] [data-testid="stButton"] button:hover {
+    border-color:var(--lime);color:var(--lime);background:rgba(199,255,115,.06);
+}
+/* Acento de color por expander, reutilizando colores ya definidos en :root
+   (azul=sobreviviente, rojo=infectados, ámbar=precisión) para escanear más
+   rápido cuál es cuál sin leer el título completo. */
+[data-testid="stSidebar"] [data-testid="stExpander"] {border-radius:14px;overflow:hidden}
+[data-testid="stSidebar"] [data-testid="stExpander"]:nth-of-type(1) {border-left:3px solid var(--blue)}
+[data-testid="stSidebar"] [data-testid="stExpander"]:nth-of-type(2) {border-left:3px solid var(--red)}
+[data-testid="stSidebar"] [data-testid="stExpander"]:nth-of-type(3) {border-left:3px solid var(--amber)}
+/* Leve resplandor en el control activo de cada slider, sensación más táctil.
+   (el estilo completo de la pista se define más abajo, para toda la app) */
+/* Scrollbar del sidebar a juego con el tema (solo navegadores basados en Chromium/WebKit). */
+[data-testid="stSidebar"] ::-webkit-scrollbar {width:8px}
+[data-testid="stSidebar"] ::-webkit-scrollbar-track {background:transparent}
+[data-testid="stSidebar"] ::-webkit-scrollbar-thumb {background:var(--line);border-radius:8px}
+[data-testid="stSidebar"] ::-webkit-scrollbar-thumb:hover {background:#3a4b40}
+/* Pequeña barra de acento bajo "Configurar misión", igual a la que ya usa
+   el título del hero, para que ambos títulos se sientan de la misma familia. */
+[data-testid="stSidebar"] h2::after {
+    content:"";display:block;width:42px;height:3px;
+    background:var(--lime);border-radius:10px;margin-top:.5rem;
+}
+/* Input de semilla con las mismas esquinas redondeadas que el resto del panel. */
+[data-testid="stSidebar"] [data-testid="stNumberInput"] > div {
+    border-radius:10px;border-color:var(--line) !important;
+}
+/* Los iconos "?" de ayuda se iluminan en lima al pasar el cursor, en vez de
+   quedarse en el gris apagado por defecto. */
+[data-testid="stSidebar"] [data-testid="stTooltipIcon"] {transition:color .15s ease}
+[data-testid="stSidebar"] [data-testid="stTooltipIcon"]:hover {color:var(--lime) !important}
+
+/* "Barritas" (sliders) en toda la app: pista con extremos redondeados y algo
+   más de cuerpo, y el control (thumb) con un anillo oscuro para que resalte
+   sobre la pista en vez de fundirse con el verde del relleno. */
+/* "Barritas" (sliders): el control (thumb) con un anillo oscuro para que
+   resalte sobre la pista en vez de fundirse con el verde del relleno.
+   (Se probó también redondear/engrosar la pista, pero eso reveló las
+   etiquetas de mínimo/máximo que Streamlit mantiene ocultas por defecto —
+   se descartó esa parte por no ser un efecto confiable.) */
+[data-testid="stSlider"] [role="slider"] {
+    box-shadow:0 0 0 4px rgba(199,255,115,.18),0 2px 6px rgba(0,0,0,.45);
+    border:2px solid var(--bg) !important;
+}
+
 .stTabs [data-baseweb="tab-list"] {gap:.42rem;border-bottom:1px solid var(--line);padding-bottom:.55rem}
 .stTabs [data-baseweb="tab"] {background:#0e1510;border:1px solid var(--line);border-radius:10px;padding:.62rem .95rem}
 .stTabs [aria-selected="true"] {border-color:#738f5d!important;color:var(--lime)!important}
-code {color:#d8ffae!important} hr {border-color:var(--line)!important}
-@media(max-width:800px){.hero-copy h1{font-size:3rem}.block-container{padding-top:.8rem}}
+code {color:#d8ffae!important;font-family:var(--font-mono)!important} hr {border-color:var(--line)!important}
+@media(max-width:900px){
+    .hero-copy h1{font-size:3rem}
+    .block-container{padding-top:.8rem}
+    [data-testid="stHorizontalBlock"]{flex-wrap:wrap;row-gap:.6rem}
+    [data-testid="stHorizontalBlock"] [data-testid="column"]{min-width:46%}
+    .stTabs [data-baseweb="tab-list"]{flex-wrap:wrap}
+}
+@media(max-width:560px){
+    [data-testid="stHorizontalBlock"] [data-testid="column"]{min-width:100%}
+}
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
@@ -193,54 +276,147 @@ def section_header(kicker: str, title: str) -> None:
     )
 
 
+# Configuración compartida para todos los gráficos Plotly: oculta el logo y
+# los botones de la barra de herramientas que no aportan a esta demo (lasso,
+# selección de caja, comparar al pasar el cursor, rotación de tabla), tanto
+# para las figuras 2D como para la escena 3D.
+PLOTLY_CONFIG: dict[str, object] = {
+    "displaylogo": False,
+    "modeBarButtonsToRemove": [
+        "select2d",
+        "lasso2d",
+        "autoScale2d",
+        "hoverClosestCartesian",
+        "hoverCompareCartesian",
+        "toggleSpikelines",
+        "hoverClosest3d",
+        "tableRotation",
+        "resetCameraLastSave3d",
+    ],
+}
+
+
 # ---------------------------------------------------------------------------
 # Panel de configuración
 # ---------------------------------------------------------------------------
+# Valores por defecto de cada widget del sidebar. Se usan para el primer
+# render y para el botón "Restablecer valores por defecto".
+SIDEBAR_DEFAULTS: dict[str, object] = {
+    "model_label_selector": "Poisson",
+    "last_polar_cv": 0.60,
+    "arrivals_per_minute": 55.8,
+    "duration": 90,
+    "player_hp": 110,
+    "player_dps": 42,
+    "weapon_range": 10.0,
+    "enemy_hp": 42,
+    "enemy_speed": 1.55,
+    "enemy_dps": 9.5,
+    "seed": 22193,
+    "dt": 0.05,
+}
+
 # El formulario agrupa widgets para evitar que cada movimiento de un deslizador
 # dispare una simulación. Solo el botón final confirma y publica la configuración.
 with st.sidebar:
     st.markdown('<div class="eyebrow">Centro de control</div>', unsafe_allow_html=True)
     st.markdown("## Configurar misión")
-    st.caption("Los cambios solo se aplican al pulsar el botón final del formulario.")
+    st.caption(
+        "Elige el modelo de llegadas y luego ajusta el resto de parámetros; "
+        "se aplican al pulsar el botón final del formulario."
+    )
+
+    # El modelo vive fuera del form porque decide si el slider de CV Polar
+    # tiene sentido mostrarse. Al estar fuera, cambia de inmediato al tocarlo,
+    # pero la configuración simulada sigue sin actualizarse hasta el envío.
+    model_label = st.radio(
+        "Modelo de llegadas",
+        ["Poisson", "Polar-lognormal"],
+        help="Poisson usa interarribos exponenciales. Polar-lognormal usa normales de Marsaglia para construir tiempos positivos.",
+        key="model_label_selector",
+    )
 
     with st.form("mission_configuration", border=False):
-        model_label = st.radio(
-            "Modelo de llegadas",
-            ["Poisson", "Polar-lognormal"],
-            help="Poisson usa interarribos exponenciales. Polar-lognormal usa normales de Marsaglia para construir tiempos positivos.",
-        )
+        if model_label == "Polar-lognormal":
+            # El widget se destruye cuando el modelo es Poisson, así que Streamlit
+            # olvida su valor. Lo recordamos aparte para no perder el ajuste del
+            # usuario al ir y venir entre modelos.
+            polar_cv = st.slider(
+                "Variabilidad Polar (CV)",
+                0.15,
+                1.20,
+                st.session_state.get("last_polar_cv", SIDEBAR_DEFAULTS["last_polar_cv"]),
+                0.05,
+                help="Un CV menor genera llegadas más regulares.",
+            )
+            st.session_state["last_polar_cv"] = polar_cv
+        else:
+            polar_cv = st.session_state.get("last_polar_cv", SIDEBAR_DEFAULTS["last_polar_cv"])
+            st.caption("La variabilidad Polar (CV) no aplica: el modelo activo es Poisson.")
+
         arrivals_per_minute = st.slider(
             "Llegadas esperadas por minuto",
             min_value=6.0,
             max_value=90.0,
-            value=55.8,
+            value=SIDEBAR_DEFAULTS["arrivals_per_minute"],
             step=1.0,
             help="Se convierte internamente a lambda por segundo.",
+            key="arrivals_per_minute",
         )
-        duration = st.slider("Duración de la misión (s)", 30, 180, 90, 10)
-        polar_cv = st.slider(
-            "Variabilidad Polar (CV)",
-            0.15,
-            1.20,
-            0.60,
-            0.05,
-            help="Solo afecta al modelo Polar-lognormal. Un CV menor genera llegadas más regulares.",
+        duration = st.slider(
+            "Duración de la misión (s)",
+            30,
+            180,
+            SIDEBAR_DEFAULTS["duration"],
+            10,
+            help="Horizonte temporal que el sobreviviente debe resistir.",
+            key="duration",
         )
 
         with st.expander("Capacidad del sobreviviente", expanded=False):
-            player_hp = st.slider("Vida inicial (HP)", 60, 200, 110, 5)
-            player_dps = st.slider("Daño por segundo", 15, 90, 42, 1)
-            weapon_range = st.slider("Alcance del arma (m)", 5.0, 15.0, 10.0, 0.5)
+            player_hp = st.slider(
+                "Vida inicial (HP)", 60, 200, SIDEBAR_DEFAULTS["player_hp"], 5,
+                help="Puntos de vida con los que arranca el sobreviviente.",
+                key="player_hp",
+            )
+            player_dps = st.slider(
+                "Daño por segundo", 15, 90, SIDEBAR_DEFAULTS["player_dps"], 1,
+                help="Daño que inflige el sobreviviente por segundo a su objetivo.",
+                key="player_dps",
+            )
+            weapon_range = st.slider(
+                "Alcance del arma (m)", 5.0, 15.0, SIDEBAR_DEFAULTS["weapon_range"], 0.5,
+                help="Distancia máxima a la que el arma puede atacar a un infectado.",
+                key="weapon_range",
+            )
 
         with st.expander("Características de los infectados", expanded=False):
-            enemy_hp = st.slider("Vida base (HP)", 20, 100, 42, 2)
-            enemy_speed = st.slider("Velocidad base (m/s)", 0.8, 3.0, 1.55, 0.05)
-            enemy_dps = st.slider("Daño de contacto por segundo", 3.0, 20.0, 9.5, 0.5)
+            enemy_hp = st.slider(
+                "Vida base (HP)", 20, 100, SIDEBAR_DEFAULTS["enemy_hp"], 2,
+                help="Vida promedio de cada infectado antes de aplicar variación individual.",
+                key="enemy_hp",
+            )
+            enemy_speed = st.slider(
+                "Velocidad base (m/s)", 0.8, 3.0, SIDEBAR_DEFAULTS["enemy_speed"], 0.05,
+                help="Velocidad de avance promedio de los infectados hacia el sobreviviente.",
+                key="enemy_speed",
+            )
+            enemy_dps = st.slider(
+                "Daño de contacto por segundo", 3.0, 20.0, SIDEBAR_DEFAULTS["enemy_dps"], 0.5,
+                help="Daño que inflige cada infectado en contacto con el sobreviviente.",
+                key="enemy_dps",
+            )
 
         with st.expander("Reproducibilidad y precisión", expanded=False):
-            seed = st.number_input("Semilla", 1, 999999, 22193, 1)
+            seed = st.number_input(
+                "Semilla", 1, 999999, SIDEBAR_DEFAULTS["seed"], 1,
+                help="Fija el generador aleatorio: misma semilla, misma partida.",
+                key="seed",
+            )
             dt = st.select_slider(
-                "Paso temporal dt (s)", options=[0.10, 0.05, 0.025], value=0.05
+                "Paso temporal dt (s)", options=[0.10, 0.05, 0.025], value=SIDEBAR_DEFAULTS["dt"],
+                help="Paso de integración del combate. Menor dt = más precisión, más costo.",
+                key="dt",
             )
 
         submitted = st.form_submit_button(
@@ -273,9 +449,28 @@ with st.sidebar:
         st.session_state.pop("mc_result", None)
         st.session_state.pop("validation_result", None)
 
+    # Fuera del form porque debe reaccionar de inmediato, sin esperar a
+    # "SIMULAR MISIÓN". Solo reescribe los widgets del panel; no toca la
+    # partida ya simulada hasta que se vuelva a pulsar el botón principal.
+    # Usa on_click porque Streamlit no permite reescribir session_state de un
+    # widget (p. ej. el radio del modelo) después de que ya se instanció en
+    # el mismo run; el callback corre antes de que eso vuelva a suceder.
+    def _restore_sidebar_defaults() -> None:
+        for default_key, default_value in SIDEBAR_DEFAULTS.items():
+            st.session_state[default_key] = default_value
+
+    st.button(
+        "Restablecer valores por defecto",
+        width="stretch",
+        on_click=_restore_sidebar_defaults,
+    )
+
     st.markdown("---")
-    st.caption(
-        "Consejo: mantén la misma semilla para reproducir una partida o cámbiala para observar otra realización."
+    st.markdown(
+        '<div class="callout blue"><b>Consejo</b><br>'
+        "Mantén la misma semilla para reproducir una partida o cámbiala para "
+        "observar otra realización.</div>",
+        unsafe_allow_html=True,
     )
 
 
@@ -315,8 +510,9 @@ if "active_config" not in st.session_state:
         """
         <div class="status-strip">
           <strong>Simulador preparado.</strong><br>
-          Revisa los parámetros del centro de control y pulsa <b>SIMULAR MISIÓN</b>
-          para generar la primera realización.
+          1&#41; Elige el modelo y ajusta los parámetros en el centro de control &nbsp;&middot;&nbsp;
+          2&#41; Pulsa <b>SIMULAR MISIÓN</b> &nbsp;&middot;&nbsp;
+          3&#41; Explora las pestañas para ver la escena, la matemática y las pruebas.
         </div>
         """,
         unsafe_allow_html=True,
@@ -326,6 +522,10 @@ if "active_config" not in st.session_state:
     a.markdown("**Llegadas**\n\nCada enemigo aparece en un instante aleatorio acumulado.")
     b.markdown("**Combate**\n\nEl sistema actualiza movimiento, ataque y daño cada `dt` segundos.")
     c.markdown("**Inferencia**\n\nMuchas partidas permiten estimar la probabilidad de sobrevivir.")
+    st.caption(
+        "¿Buscas el contexto académico completo (objetivos, variables, supuestos)? "
+        "Está en la pestaña **Guía del proyecto**, disponible después de la primera partida."
+    )
     st.stop()
 
 
@@ -360,6 +560,11 @@ metrics[3].metric("Eliminados", result.eliminated, f"{100*result.eliminated/max(
 metrics[4].metric("Activos al cierre", result.remaining)
 metrics[5].metric("Pico simultáneo", result.max_concurrent)
 
+st.caption(
+    "Empieza por la escena interactiva y avanza hacia la matemática, la validación "
+    "estadística y la comparación entre modelos."
+)
+
 # Las pestañas siguen el orden de una investigación: observar, fundamentar,
 # validar los generadores, comparar los modelos e inferir mediante repetición.
 simulation_tab, math_tab, validation_tab, comparison_tab, monte_carlo_tab, guide_tab = st.tabs([
@@ -386,7 +591,7 @@ with simulation_tab:
             0.5,
             key="timeline_explorer",
         )
-        st.plotly_chart(arena_3d(result, t_view), use_container_width=True, config={"displaylogo": False})
+        st.plotly_chart(arena_3d(result, t_view), use_container_width=True, config=PLOTLY_CONFIG)
         st.caption(
             "Arrastra para rotar, usa la rueda para acercar y pasa el cursor sobre los infectados. "
             "El anillo verde marca el alcance; el rojo, la zona de contacto."
@@ -419,7 +624,7 @@ with simulation_tab:
             5. La misión termina al agotar HP o alcanzar el tiempo objetivo.
             """
         )
-    st.plotly_chart(timeline_figure(result), use_container_width=True, config={"displaylogo": False})
+    st.plotly_chart(timeline_figure(result), use_container_width=True, config=PLOTLY_CONFIG)
 
 
 with math_tab:
@@ -489,9 +694,9 @@ with math_tab:
 
     chart_left, chart_right = st.columns(2)
     with chart_left:
-        st.plotly_chart(arrival_process_figure(result), use_container_width=True, config={"displaylogo": False})
+        st.plotly_chart(arrival_process_figure(result), use_container_width=True, config=PLOTLY_CONFIG)
     with chart_right:
-        st.plotly_chart(interarrival_figure(result), use_container_width=True, config={"displaylogo": False})
+        st.plotly_chart(interarrival_figure(result), use_container_width=True, config=PLOTLY_CONFIG)
     st.caption(
         "El histograma usa interarribos observados antes del cierre y sirve como diagnóstico visual; "
         "la truncación temporal puede sesgar una muestra pequeña y no sustituye una prueba formal."
@@ -604,7 +809,7 @@ with validation_tab:
                 validation, config.lambda_rate, config.polar_cv
             ),
             use_container_width=True,
-            config={"displaylogo": False},
+            config=PLOTLY_CONFIG,
         )
         tests_display = validation.tests.copy()
         tests_display.columns = [
@@ -730,7 +935,7 @@ with comparison_tab:
         contingency = comparison_saved["contingency"]
         left, right = st.columns([1.4, 1])
         with left:
-            st.plotly_chart(model_comparison_figure(summary), use_container_width=True, config={"displaylogo": False})
+            st.plotly_chart(model_comparison_figure(summary), use_container_width=True, config=PLOTLY_CONFIG)
         with right:
             display_summary = summary.copy()
             display_summary["model"] = display_summary["model"].map({"poisson": "Poisson", "polar": "Polar-lognormal"})
@@ -758,7 +963,7 @@ with comparison_tab:
             st.plotly_chart(
                 paired_effects_figure(effects),
                 use_container_width=True,
-                config={"displaylogo": False},
+                config=PLOTLY_CONFIG,
             )
         with effect_right:
             effects_display = effects.copy()
@@ -842,9 +1047,9 @@ with monte_carlo_tab:
         mc_metrics[3].metric("Llegadas medias", f"{float(summary['mean_generated']):.1f}")
         left, right = st.columns([1, 1.6])
         with left:
-            st.plotly_chart(monte_carlo_figure(batch), use_container_width=True, config={"displaylogo": False})
+            st.plotly_chart(monte_carlo_figure(batch), use_container_width=True, config=PLOTLY_CONFIG)
         with right:
-            st.plotly_chart(survival_curve_figure(curve), use_container_width=True, config={"displaylogo": False})
+            st.plotly_chart(survival_curve_figure(curve), use_container_width=True, config=PLOTLY_CONFIG)
         below = curve[curve["survival_probability"] < 0.5]
         if not below.empty:
             critical_rate = float(below.iloc[0]["lambda"] * 60)
@@ -860,6 +1065,19 @@ with guide_tab:
     # Resumen autocontenido para que la demostración también pueda explicar
     # objetivos, variables, supuestos, decisiones tecnológicas y entregables.
     section_header("Lectura académica", "Objetivo, variables, supuestos y alcance")
+    st.markdown(
+        """
+        <div class="callout blue">
+          <b>En resumen</b><br>
+          Simulamos la aparición de infectados con un proceso de Poisson (o una
+          alternativa Polar-lognormal) y medimos si un sobreviviente aguanta el
+          ataque durante un horizonte de tiempo objetivo. Comparamos ambos modelos
+          con pruebas estadísticas formales y estimamos la probabilidad de
+          sobrevivir mediante repetición Monte Carlo.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     objective_col, variables_col = st.columns(2)
     with objective_col:
         st.markdown("### Objetivo general")
